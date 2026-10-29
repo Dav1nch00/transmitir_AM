@@ -22,8 +22,9 @@ from scipy.signal import butter, sosfiltfilt, hilbert
 from .dsp import resample_to
 
 # Ancho de banda de demodulación alrededor de la portadora (Hz).
-# Coincide con la referencia (Receptor.py): fc ± 2000 Hz.
-DEMOD_BANDWIDTH = 2000.0
+# Debe ser ≥ la frecuencia máxima de la señal de audio (voz ≈ 4 kHz).
+# Con 5 kHz se cubren todas las bandas laterales AM con margen de guarda.
+DEMOD_BANDWIDTH = 5000.0
 
 # fs de transmisión por altavoz.
 FS_TX = 44100.0
@@ -69,7 +70,7 @@ def prepare_baseband(signal, fs_in: float, fs_out: float = FS_TX) -> tuple[np.nd
     return _normalize_peak(x), float(fs_out)
 
 
-def modulate_am(audio_signal, sample_rate: float, carrier_freq: float = 17000.0,
+def modulate_am(audio_signal, sample_rate: float, carrier_freq: float = 10000.0,
                 index_mod: float = 0.7) -> np.ndarray:
     """Modula una señal de banda base en AM (DSB-FC).
 
@@ -105,7 +106,7 @@ def lowpass_filter(data, cutoff: float, fs: float, order: int = 4) -> np.ndarray
     return sosfiltfilt(sos, np.asarray(data, dtype=np.float64))
 
 
-def demodulate_am(received_signal, sample_rate: float, carrier_freq: float = 17000.0,
+def demodulate_am(received_signal, sample_rate: float, carrier_freq: float = 10000.0,
                   cutoff_freq: float = 4000.0,
                   bandwidth: float = DEMOD_BANDWIDTH) -> tuple[np.ndarray, float]:
     """Demodula una señal AM grabada del aire y devuelve el audio recuperado.
@@ -125,7 +126,7 @@ def demodulate_am(received_signal, sample_rate: float, carrier_freq: float = 170
 
 
 def demodulate_am_hilbert(received_signal, sample_rate: float,
-                          carrier_freq: float = 17000.0,
+                          carrier_freq: float = 10000.0,
                           cutoff_freq: float = 4000.0,
                           bandwidth: float = DEMOD_BANDWIDTH) -> tuple[np.ndarray, float]:
     """Variante con envolvente por la transformada de Hilbert."""

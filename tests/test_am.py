@@ -84,8 +84,9 @@ class TestDemodulation(unittest.TestCase):
         self.assertEqual(len(y), 0)
         self.assertAlmostEqual(fs, 44100.0)
 
-    def test_demodulation_bandwidth_matches_reference(self) -> None:
-        self.assertAlmostEqual(DEMOD_BANDWIDTH, 2000.0)
+    def test_demodulation_bandwidth_covers_voice(self) -> None:
+        # El ancho de banda debe cubrir las bandas laterales de la voz (≥ 4 kHz).
+        self.assertGreaterEqual(DEMOD_BANDWIDTH, 4000.0)
 
     def test_amplitude_of_carrier_alone_is_removed(self) -> None:
         # Solo portadora: la envolvente debe ser plana (rizo < 5 % del DC).

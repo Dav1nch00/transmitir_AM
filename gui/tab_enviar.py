@@ -15,7 +15,7 @@ from .widgets import PlotTab
 class TabEnviar(PlotTab):
     def __init__(self, master, app):
         super().__init__(master, app)
-        self.carrier_var = tk.StringVar(value="17000")
+        self.carrier_var = tk.StringVar(value="10000")
         self.index_var = tk.DoubleVar(value=0.7)
         self.source_var = tk.StringVar(value="Señal digitalizada (DAC)")
         self.status_tx = tk.StringVar(value="Sin transmitir.")
@@ -53,7 +53,7 @@ class TabEnviar(PlotTab):
         ttk.Label(row1, textvariable=self.status_tx, style="Metric.TLabel").pack(
             side="left", padx=(8, 0))
 
-        ttk.Label(c, text="La señal se modula en AM (portadora ~17 kHz) y se reproduce "
+        ttk.Label(c, text="La señal se modula en AM (portadora ~10 kHz) y se reproduce "
                           "por el altavoz, como en Emisor.py.",
                   style="Subtitle.TLabel").pack(anchor="w", pady=(4, 0))
 

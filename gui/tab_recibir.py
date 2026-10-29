@@ -30,7 +30,7 @@ class TabRecibir(PlotTab):
         self.record_info = tk.StringVar(value="Sin recibir.")
         self.info_var = tk.StringVar(value="Pulse «Recibir» para capturar la señal transmitida.")
         self.cutoff_var = tk.StringVar(value="4000")
-        self.carrier_var = tk.StringVar(value="17000")
+        self.carrier_var = tk.StringVar(value="10000")
 
         self._build_controls()
         self._load_devices()

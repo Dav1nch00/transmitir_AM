@@ -1,0 +1,1 @@
+﻿Aqui se guardan los WAV, CSV y figuras exportados por RETICO.

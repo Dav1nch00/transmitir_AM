@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+retico/salidas/*.wav
+retico/salidas/*.csv
+retico/salidas/*.png

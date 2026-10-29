@@ -1,1 +1,1 @@
-"""Núcleo de audio y DSP del proyecto RETICO."""
+"""Núcleo de audio, DSP y AM del proyecto RETICO."""

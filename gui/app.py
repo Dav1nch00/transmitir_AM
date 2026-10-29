@@ -13,14 +13,15 @@ from .tab_digitalizacion import TabDigitalizacion
 from .tab_espectro import TabEspectro
 from .tab_nyquist import TabNyquist
 from .tab_enviar import TabEnviar
+from .tab_recibir import TabRecibir
 
 
 class App(tk.Tk):
-    """Ventana con barra de parámetros globales y cuatro pestañas."""
+    """Ventana con barra de parámetros globales y las pestañas del flujo."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("RETICO — Digitalización de audio")
+        self.title("RETICO — Digitalización y transmisión AM")
         self.geometry("1320x900")
         self.minsize(1100, 760)
 
@@ -66,10 +67,10 @@ class App(tk.Tk):
     def _build_layout(self) -> None:
         header = ttk.Frame(self, padding=(12, 8, 12, 2))
         header.pack(side="top", fill="x")
-        ttk.Label(header, text="RETICO — Digitalización de audio", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(header, text="RETICO — Digitalización y transmisión AM", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             header,
-            text="Grabación · muestreo · cuantización · FFT · Nyquist, aliasing y reconstrucción",
+            text="Grabación · muestreo · cuantización · FFT · Nyquist y reconstrucción · transmisión y recepción AM",
             style="Subtitle.TLabel",
         ).pack(anchor="w")
 
@@ -118,16 +119,18 @@ class App(tk.Tk):
         self.tab_nyquist = TabNyquist(self.notebook, self, mode="aliasing")
         self.tab_recon = TabNyquist(self.notebook, self, mode="recon")
         self.tab_enviar = TabEnviar(self.notebook, self)
+        self.tab_recibir = TabRecibir(self.notebook, self)
         self.tabs = [self.tab_captura, self.tab_digitalizacion,
                      self.tab_espectro, self.tab_nyquist, self.tab_recon,
-                     self.tab_enviar]
+                     self.tab_enviar, self.tab_recibir]
 
         self.notebook.add(self.tab_captura, text="1. Captura")
         self.notebook.add(self.tab_digitalizacion, text="2. Digitalización y cuantización")
         self.notebook.add(self.tab_espectro, text="3. FFT y espectro")
         self.notebook.add(self.tab_nyquist, text="4. Nyquist y aliasing")
         self.notebook.add(self.tab_recon, text="5. Reconstrucción")
-        self.notebook.add(self.tab_enviar, text="6. Enviar señal")
+        self.notebook.add(self.tab_enviar, text="6. Transmitir AM")
+        self.notebook.add(self.tab_recibir, text="7. Recibir AM")
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         status = ttk.Frame(self)

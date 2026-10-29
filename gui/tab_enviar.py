@@ -6,8 +6,8 @@ from tkinter import messagebox, ttk
 
 import numpy as np
 
+from core.am import modulate_am, prepare_baseband
 from core.audio_io import Player
-from core.emisor import modulate_am, prepare_baseband
 
 from .widgets import PlotTab
 

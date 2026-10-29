@@ -1,8 +1,9 @@
-# RETICO — Digitalización de audio
+# RETICO — Digitalización de audio y transmisión AM
 
 Aplicación de escritorio en Python (Tkinter + Matplotlib) para grabar audio,
 digitalizarlo, analizarlo con FFT y estudiar muestreo, cuantización, Nyquist,
-aliasing y reconstrucción.
+aliasing y reconstrucción. Incluye además la transmisión y recepción acústica
+de una señal modulada en AM (DSB-FC).
 
 El flujo completo es:
 
@@ -11,32 +12,29 @@ micrófono / WAV  →  x(t)  →  muestreo fs  →  cuantización N bits  →  t
                                       │
                                       ├── FFT y espectrograma
                                       ├── Nyquist y aliasing
-                                      └── reconstrucción DAC / sinc
+                                      ├── reconstrucción DAC / sinc
+                                      └── AM: (1 + m·x(t))·cos(2π·fc·t)
+                                             └── altavoz ── aire ── micrófono ── demodulación
 ```
 
 ## Requisitos
 
 - Python 3.10 o superior.
 - `numpy`, `scipy`, `matplotlib`, `PyAudio` y Tkinter.
-
-En Windows, Tkinter viene con Python. Para instalar el resto:
-
-```bash
-pip install -r requirements.txt
-```
-
-En Debian/Ubuntu, además:
-
-```bash
-sudo apt install python3-tk python3-venv portaudio19-dev
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-```
+- En Windows, Tkinter viene con Python. Para instalar el resto:
+  ```bash
+  pip install -r requirements.txt
+  ```
+- En Debian/Ubuntu, además:
+  ```bash
+  sudo apt install python3-tk python3-venv portaudio19-dev
+  python3 -m venv .venv && source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
 
 ## Ejecución
 
 ```bash
-cd retico
 python main.py
 ```
 
@@ -47,24 +45,28 @@ acepta la frecuencia elegida, pruebe con **44100 Hz**.
 ## Estructura
 
 ```
-retico/
+transmitir_AM/
 ├── main.py                  punto de entrada
 ├── requirements.txt
 ├── README.md
-├── core/                    lógica DSP, sin depender de la interfaz
+├── core/                    lógica DSP y AM, sin depender de la interfaz
 │   ├── audio_io.py          micrófono, lectura/escritura WAV y reproducción
 │   ├── dsp.py               FFT, ventanas, remuestreo, aliasing, sinc y STFT
 │   ├── quantization.py      ADC/DAC, Δ, códigos binarios, error y SQNR
-│   └── pipeline.py          cadena audio → x[n] → cuantización
+│   ├── pipeline.py          cadena audio → x[n] → cuantización
+│   └── am.py                modulación y demodulación AM (DSB-FC)
 ├── gui/
 │   ├── app.py               ventana, parámetros globales y pestañas
 │   ├── widgets.py           figura incrustada, barra de guardado y CSV
 │   ├── tab_captura.py       pestaña 1
 │   ├── tab_digitalizacion.py pestaña 2
 │   ├── tab_espectro.py      pestaña 3
-│   └── tab_nyquist.py       pestaña 4
-├── tests/test_core.py       pruebas del núcleo
-└── salidas/                 WAV, CSV y figuras exportadas
+│   ├── tab_nyquist.py       pestañas 4 y 5 (aliasing y reconstrucción)
+│   ├── tab_enviar.py        pestaña 6 (transmisión AM)
+│   └── tab_recibir.py       pestaña 7 (recepción AM)
+├── tests/                   pruebas del núcleo y de AM
+├── salidas/                 WAV, CSV y figuras exportadas
+└── referencia/              scripts originales de apoyo (Emisor.py, Receptor.py, enviar_recibir.py)
 ```
 
 ## Parámetros globales
@@ -125,82 +127,33 @@ Dos vistas:
 - Error entre ambas y reproducción de la señal original, cuantizada y
   reconstruida.
 
-## Fórmulas implementadas
+### 5. Reconstrucción
 
-### Muestreo y Nyquist
+- Comparación entre retención de orden cero (escalera del DAC) e interpolación
+  sinc.
+- Error entre ambas y reproducción de la señal original, cuantizada y
+  reconstruida.
 
-```
-x[n] = x(n·Ts),        Ts = 1/fs
-fs ≥ 2·f_max           (Nyquist-Shannon)
-f_alias = |f − k·fs|   (k entero)
-```
+### 6. Transmitir AM
 
-`f_max` se estima como la frecuencia por debajo de la cual se acumula el 99 %
-de la energía del espectro unilateral. No es una verdad absoluta: es una
-convención útil para audio real.
+- Fuente de la señal: la salida digitalizada del DAC (x[n] normalizado) o el
+  audio original.
+- Portadora ajustable (predeterminada 17000 Hz) e índice de modulación m.
+- La banda base se normaliza y remuestrea a 44100 Hz con antialiasing, se
+  modula y se reproduce por el altavoz.
+- Gráficas de la banda base y de la señal modulada en una ventana de 50 ms.
 
-### FFT
+### 7. Recibir AM
 
-```
-|X(f)| = 2·|FFT{x[n]·w[n]}| / Σw[n]
-Δf = fs/N
-```
+- Captura de la señal transmitida desde el micrófono (7 s a 44100 Hz por
+  defecto, configurable entre 3 y 15 s).
+- Demodulación: filtro pasa-bandas alrededor de la portadora (fc ± 2000 Hz),
+  rectificación y filtro pasa-bajas de 4000 Hz para extraer la envolvente.
+- El audio demodulado alimenta el estado compartido: se puede reproducir,
+  analizar con FFT, digitalizar de nuevo y estudiar su Nyquist/reconstrucción.
+- Medidor de nivel y temporizador durante la recepción.
 
-El factor 2 reconstruye la amplitud de la sinusoide en el espectro unilateral;
-DC y Nyquist no se duplican.
-
-### Cuantización
-
-```
-Δ = 2·Vref / 2^N
-v(n) = x(n)·Vref
-q(n) = clip(round(v/Δ), −2^(N−1), 2^(N−1)−1)
-código ADC = q(n) + 2^(N−1)
-V_DAC(n) = q(n)·Δ
-−Δ/2 ≤ e(n) = V_DAC(n) − v(n) ≤ Δ/2
-```
-
-### Relación señal-ruido de cuantización
-
-Para una senoide a plena escala:
-
-```
-SQNR = 6.02·N + 1.76 dB
-```
-
-Para una señal cualquiera, el programa calcula también:
-
-```
-SQNR_medida = 10·log10( P_señal / P_error )
-SQNR_esperada = 10·log10( P_señal / (Δ²/12) )
-ENOB = (SQNR_medida − 1.76) / 6.02
-```
-
-### Reconstrucción
-
-```
-x(t) = Σ x[n]·sinc((t − n·Ts)/Ts)
-```
-
-La implementación trunca el sinc a 65 muestras (32 a cada lado) y usa
-retención de orden cero para representar el DAC.
-
-## Experimentos para la sustentación
-
-1. **Ruido de cuantización.** Grabe la misma frase con 4, 8 y 16 bits. Observe
-   la escalera, el error y la SQNR. A 4 bits la voz se entiende pero suena
-   granulada; a 16 bits el error es inaudible.
-2. **Nyquist y ancho de banda.** Cargue una canción y compare fs = 8000 Hz con
-   fs = 44100 Hz. La pestaña 4 indica si se cumple `fs ≥ 2·f_max`.
-3. **Aliasing.** En la pestaña 4, active el filtro antialiasing y luego
-   desactívelo. Con un tono de 7000 Hz a fs = 8000 Hz, la frecuencia aparente
-   es 1000 Hz. El espectro muestreado lo muestra sin ambigüedad.
-4. **Reconstrucción.** Compare la escalera del DAC con el sinc. A menor fs, la
-   diferencia entre ambas es más grande y la escalera se vuelve audible.
-5. **Resolución frecuencial.** Use ventana rectangular y luego Hann: la fuga
-   espectral disminuye, pero el lóbulo principal se ensancha.
-
-## Exportación
+### 8. Exportación
 
 - **WAV:** pestaña 1, botón «Guardar WAV» (PCM 16 bits).
 - **CSV de muestras:** pestaña 2, hasta 100 000 filas.
@@ -216,7 +169,11 @@ python -m unittest discover -s tests -v
 
 Las pruebas cubren cuantización, cota del error, SQNR, FFT, ancho de banda,
 frecuencia de aliasing, filtro antialiasing, interpolación sinc, lectura y
-escritura de WAV y la cadena completa de digitalización.
+escritura de WAV y la cadena completa de digitalización. Las pruebas de AM
+(`tests/test_am.py`) cubren la frecuencia de la portadora y las bandas
+laterales, el remuestreo de banda base, la recuperación de un tono con
+envolvente y con Hilbert, el aplanado de la envolvente con solo portadora y
+los filtros pasa-bandas y pasa-bajas.
 
 ## Limitaciones y notas
 
@@ -224,9 +181,16 @@ escritura de WAV y la cadena completa de digitalización.
 - La reproducción usa el dispositivo de salida predeterminado del sistema.
 - En la pestaña 4, la comparación de fs usa como máximo los primeros 10 s del
   audio para mantener la interfaz fluida.
-- El filtro antialiasing es un polifásico con ventana Kaiser de `scipy`; no es
+- El filtro antialiasing es un polifásico con ventana Kaiser de `scipy`; no es  
   un Butterworth, pero su misión es la misma: atenuar lo que se pliega.
-- El WAV exportado es de 16 bits; la cuantización interna puede usar cualquier
+- El WAV exportado es de 16 bits; la cuantización interna puede usar cualquier  
   resolución entre 2 y 24 bits.
-- La aplicación no reemplaza un analizador de espectro calibrado: trabaja con
+- La aplicación no reemplaza un analizador de espectro calibrado: trabaja con  
   la escala del archivo y con Vref como referencia.
+
+## Referencias
+
+- Proakis & Manolakis, *Digital Signal Processing*, capítulos de muestreo,  
+  cuantización y modulación de amplitud.
+- A. V. Oppenheim & R. W. Schafer, *Discrete-Time Signal Processing*.
+- `referencia/`: scripts originales de apoyo (Emisor.py, Receptor.py, enviar_recibir.py).

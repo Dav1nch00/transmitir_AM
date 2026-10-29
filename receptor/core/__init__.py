@@ -1,1 +1,0 @@
-"""Núcleo de audio y DSP del receptor."""

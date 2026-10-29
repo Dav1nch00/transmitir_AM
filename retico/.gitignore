@@ -1,6 +1,0 @@
-__pycache__/
-*.py[cod]
-salidas/*.wav
-salidas/*.csv
-salidas/*.png
-.venv/

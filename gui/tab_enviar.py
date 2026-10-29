@@ -16,7 +16,7 @@ class TabEnviar(PlotTab):
     def __init__(self, master, app):
         super().__init__(master, app)
         self.carrier_var = tk.StringVar(value="10000")
-        self.index_var = tk.DoubleVar(value=0.7)
+        self.index_var = tk.DoubleVar(value=0.95)
         self.source_var = tk.StringVar(value="Señal digitalizada (DAC)")
         self.status_tx = tk.StringVar(value="Sin transmitir.")
         self._player: Player | None = None

@@ -42,8 +42,14 @@ def _edge_margin(n: int, fs: float) -> int:
     return min(int(round(0.02 * float(fs))), max(1, n // 10))
 
 
-def _finish_demod(envelop: np.ndarray, fs: float) -> tuple[np.ndarray, float]:
-    """Quita el DC (media central), normaliza y recorta los bordes."""
+def _finish_demod(envelop: np.ndarray, fs: float,
+                  target_rms: float = 0.25) -> tuple[np.ndarray, float]:
+    """Quita el DC (media central), normaliza y amplifica para volumen audible.
+
+    Después de la normalización por pico (que deja la señal con pico ≤ 1),
+    se aplica una ganancia basada en RMS para compensar la baja energía
+    promedio típica de la voz.  El resultado se recorta suavemente a ±1.
+    """
     n = len(envelop)
     m = _edge_margin(n, fs)
     center = envelop[m:n - m] if n > 2 * m else envelop
@@ -51,7 +57,17 @@ def _finish_demod(envelop: np.ndarray, fs: float) -> tuple[np.ndarray, float]:
     peak = float(np.max(np.abs(center - np.mean(center)))) if center.size else 0.0
     if peak > 0.0:
         demod = demod / peak
-    return demod[m:n - m], float(fs)
+
+    trimmed = demod[m:n - m]
+
+    # --- Ganancia RMS: sube el volumen percibido de la voz ---
+    cur_rms = float(np.sqrt(np.mean(trimmed ** 2))) if trimmed.size else 0.0
+    if cur_rms > 1e-6:
+        gain = min(target_rms / cur_rms, 6.0)     # tope 6× para no explotar ruido
+        if gain > 1.0:
+            trimmed = np.clip(trimmed * gain, -1.0, 1.0)
+
+    return trimmed, float(fs)
 
 
 def prepare_baseband(signal, fs_in: float, fs_out: float = FS_TX) -> tuple[np.ndarray, float]:
@@ -71,7 +87,7 @@ def prepare_baseband(signal, fs_in: float, fs_out: float = FS_TX) -> tuple[np.nd
 
 
 def modulate_am(audio_signal, sample_rate: float, carrier_freq: float = 10000.0,
-                index_mod: float = 0.7) -> np.ndarray:
+                index_mod: float = 0.95) -> np.ndarray:
     """Modula una señal de banda base en AM (DSB-FC).
 
     ``s(t) = (1 + m·x(t))·cos(2π·fc·t)`` y se normaliza al final para

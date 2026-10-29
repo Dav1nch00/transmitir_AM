@@ -31,6 +31,7 @@ class TabRecibir(PlotTab):
         self.info_var = tk.StringVar(value="Pulse «Recibir» para capturar la señal transmitida.")
         self.cutoff_var = tk.StringVar(value="4000")
         self.carrier_var = tk.StringVar(value="10000")
+        self.gain_var = tk.DoubleVar(value=6.0)
 
         self._build_controls()
         self._load_devices()
@@ -74,6 +75,9 @@ class TabRecibir(PlotTab):
         ttk.Entry(row2, textvariable=self.carrier_var, width=8).pack(side="left", padx=(0, 12))
         ttk.Label(row2, text="Corte (Hz)").pack(side="left", padx=(0, 4))
         ttk.Entry(row2, textvariable=self.cutoff_var, width=8).pack(side="left", padx=(0, 12))
+        ttk.Label(row2, text="Ganancia (dB)").pack(side="left", padx=(0, 4))
+        ttk.Spinbox(row2, from_=0, to=20, increment=2, textvariable=self.gain_var,
+                    width=5).pack(side="left", padx=(0, 12))
         self.play_btn = ttk.Button(row2, text="▶ Reproducir", command=self._play)
         self.play_btn.pack(side="left", padx=(0, 4))
         self.stop_play_btn = ttk.Button(row2, text="■ Silencio", command=self._stop_play,
@@ -187,8 +191,13 @@ class TabRecibir(PlotTab):
             carrier = float(self.carrier_var.get().replace(",", "."))
             cutoff = float(self.cutoff_var.get().replace(",", "."))
         except ValueError:
-            carrier = 17000.0
+            carrier = 10000.0
             cutoff = 4000.0
+
+        try:
+            gain_db = float(self.gain_var.get())
+        except (tk.TclError, ValueError):
+            gain_db = 6.0
 
         try:
             demod, fs = demodulate_am(rec_audio.x, rec_audio.fs, carrier_freq=carrier,
@@ -197,6 +206,11 @@ class TabRecibir(PlotTab):
             messagebox.showerror("Demodulación", str(exc))
             self.app.set_status(str(exc), error=True)
             return
+
+        # Aplicar ganancia manual (dB) y recortar a ±1.
+        if gain_db > 0:
+            gain_lin = 10.0 ** (gain_db / 20.0)
+            demod = np.clip(demod * gain_lin, -1.0, 1.0)
         audio = Audio(x=demod, fs=int(round(fs)), source="receptor", path="",
                       channels=1, bits=16, is_float=True)
         self.record_info.set(f"Recibido: {audio.duration:.2f} s")

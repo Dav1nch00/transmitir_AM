@@ -11,7 +11,8 @@ from core.audio_io import Audio, read_wav, save_wav
 from core.dsp import (alias_frequency, bandwidth_99, energy_above, resample_to,
                       sinc_interp, spectrum)
 from core.pipeline import Params, digitize
-from core.quantization import AdcConfig, QuantizationError, quantize, to_binary
+from core.quantization import (AdcConfig, QuantizationError, level_table, pcm_stream,
+                               quantize, to_binary, to_hex_bytes)
 
 
 def sine(freq: float, fs: float, seconds: float, amp: float = 0.9) -> np.ndarray:
@@ -45,6 +46,19 @@ class TestQuantization(unittest.TestCase):
     def test_binary_code(self) -> None:
         self.assertEqual(to_binary(5, 4), "0101")
         self.assertEqual(to_binary(0, 8), "00000000")
+
+    def test_byte_and_bit_representation(self) -> None:
+        self.assertEqual(to_hex_bytes(5, 8), "05")
+        self.assertEqual(to_hex_bytes(5, 12), "0005")
+        qr = quantize(np.zeros(4), AdcConfig(8, 1.0))
+        bits = pcm_stream(qr.codes_u, qr.cfg, 4, unit="bit").split()
+        byts = pcm_stream(qr.codes_u, qr.cfg, 4, unit="byte").split()
+        self.assertEqual(len(bits), 4)
+        self.assertEqual(len(byts), 4)
+        self.assertTrue(all(len(b) == 8 for b in bits))
+        self.assertTrue(all(len(b) == 2 for b in byts))
+        rows, _ = level_table(qr.cfg, qr.codes_u, max_rows=8, unit="byte")
+        self.assertTrue(all(len(row[2]) == 2 for row in rows))
 
     def test_invalid_config(self) -> None:
         with self.assertRaises(QuantizationError):

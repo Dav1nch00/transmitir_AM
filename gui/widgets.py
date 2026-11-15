@@ -5,7 +5,7 @@ import csv
 import datetime as _dt
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
@@ -56,12 +56,20 @@ class PlotTab(ttk.Frame):
         self.toolbar.update()
         self.footer = ttk.Frame(self)
         self.plot_frame = ttk.Frame(self)
+        self.save_strip = ttk.Frame(self)
+        self.save_info = tk.StringVar(value="")
 
         self.controls.pack(side="top", fill="x")
         self.toolbar.pack(side="bottom", fill="x")
         self.footer.pack(side="bottom", fill="x")
+        self.save_strip.pack(side="bottom", fill="x")
         self.plot_frame.pack(side="top", fill="both", expand=True)
         self.canvas.get_tk_widget().pack(in_=self.plot_frame, fill="both", expand=True)
+
+        ttk.Button(self.save_strip, text="💾 Guardar gráfica",
+                   command=self.save_figure).pack(side="left", padx=(10, 6), pady=3)
+        ttk.Label(self.save_strip, textvariable=self.save_info,
+                  style="Subtitle.TLabel").pack(side="left")
 
     # -- ciclo de vida -----------------------------------------------------
     def mark_dirty(self) -> None:
@@ -109,6 +117,30 @@ class PlotTab(ttk.Frame):
 
     def draw(self) -> None:
         self.canvas.draw_idle()
+
+    def save_figure(self) -> None:
+        """Guarda en un archivo la figura completa de la pestaña actual."""
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Guardar gráfica de la pestaña",
+            initialdir=str(output_dir()),
+            initialfile=timestamp("grafica", "png"),
+            defaultextension=".png",
+            filetypes=[("Imagen PNG", "*.png"), ("PDF", "*.pdf"),
+                       ("SVG", "*.svg"), ("Todos los archivos", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            self.figure.savefig(path, dpi=200, facecolor="white")
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Guardar gráfica",
+                                 f"No se pudo guardar la imagen:\n{exc}",
+                                 parent=self)
+            self.app.set_status(f"Error al guardar la gráfica: {exc}", error=True)
+            return
+        self.save_info.set(f"Guardada: {Path(path).name}")
+        self.app.set_status(f"Gráfica guardada en {path}")
 
 
 def info_label(master: tk.Misc, columns: int = 1) -> ttk.Label:

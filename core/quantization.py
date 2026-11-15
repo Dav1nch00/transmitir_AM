@@ -136,14 +136,25 @@ def to_binary(code_u: int, bits: int) -> str:
     return format(int(code_u), f"0{int(bits)}b")
 
 
+def to_hex_bytes(code_u: int, bits: int) -> str:
+    """Código ADC en hexadecimal, con 2 dígitos por byte.
+
+    Para resoluciones que no son múltiplo de 8 (por ejemplo 12 bits) se
+    completa con ceros hasta el byte entero, de modo que el texto siempre
+    tenga un número entero de bytes.
+    """
+    nbytes = max(1, (int(bits) + 7) // 8)
+    return format(int(code_u), f"0{2 * nbytes}X")
+
+
 def level_voltages(cfg: AdcConfig) -> np.ndarray:
     half = cfg.levels // 2
     return (np.arange(cfg.levels, dtype=np.float64) - half) * cfg.lsb
 
 
 def level_table(cfg: AdcConfig, codes_u: np.ndarray | None = None,
-                max_rows: int = 64) -> tuple[list[tuple[str, ...]], str]:
-    """Filas (código, tensión, binario) y una nota sobre el recorte."""
+                max_rows: int = 64, unit: str = "bit") -> tuple[list[tuple[str, ...]], str]:
+    """Filas (código, tensión, binario/hex) y una nota sobre el recorte."""
     if codes_u is None:
         idx = np.arange(cfg.levels)
         note = f"Se muestran los {cfg.levels} niveles (2^{cfg.bits})."
@@ -156,22 +167,32 @@ def level_table(cfg: AdcConfig, codes_u: np.ndarray | None = None,
         idx = np.concatenate((idx[:half], idx[-half:]))
         note += f" (se recortan los intermedios: {max_rows} filas)."
     volts = (idx.astype(np.float64) - cfg.levels // 2) * cfg.lsb
-    rows = [(str(int(i)), f"{v:+.6f}", to_binary(int(i), cfg.bits))
+    byte_mode = unit.lower().startswith("byte")
+    rows = [(str(int(i)), f"{v:+.6f}",
+             to_hex_bytes(int(i), cfg.bits) if byte_mode else to_binary(int(i), cfg.bits))
             for i, v in zip(idx, volts)]
     return rows, note
 
 
-def pcm_stream(codes_u: np.ndarray, cfg: AdcConfig, count: int = 16) -> str:
+def pcm_stream(codes_u: np.ndarray, cfg: AdcConfig, count: int = 16,
+               unit: str = "bit") -> str:
+    """Primeras `count` muestras en binario (bit) o hexadecimal por bytes."""
     n = min(int(count), len(codes_u))
+    if unit.lower().startswith("byte"):
+        return " ".join(to_hex_bytes(int(c), cfg.bits) for c in codes_u[:n])
     return " ".join(to_binary(int(c), cfg.bits) for c in codes_u[:n])
 
 
 def sample_table(t_n: np.ndarray, x_n: np.ndarray, qr: QuantResult,
-                 start: int = 0, rows: int = 40) -> list[tuple[str, ...]]:
-    """Filas (n, t [ms], x(n), v [V], q, código, binario, V_DAC [V], error [mV])."""
+                 start: int = 0, rows: int = 40,
+                 unit: str = "bit") -> list[tuple[str, ...]]:
+    """Filas (n, t [ms], x(n), v [V], q, código, bin/hex, V_DAC [V], error [mV])."""
     end = min(len(x_n), int(start) + int(rows))
+    byte_mode = unit.lower().startswith("byte")
     out = []
     for i in range(max(0, int(start)), end):
+        code = (to_hex_bytes(int(qr.codes_u[i]), qr.cfg.bits) if byte_mode
+                else to_binary(int(qr.codes_u[i]), qr.cfg.bits))
         out.append((
             str(i),
             f"{t_n[i] * 1e3:.3f}",
@@ -179,7 +200,7 @@ def sample_table(t_n: np.ndarray, x_n: np.ndarray, qr: QuantResult,
             f"{qr.volts[i]:+.6f}",
             f"{int(qr.codes[i]):+d}",
             str(int(qr.codes_u[i])),
-            to_binary(int(qr.codes_u[i]), qr.cfg.bits),
+            code,
             f"{qr.volts_q[i]:+.6f}",
             f"{qr.error[i] * 1e3:+.4f}",
         ))

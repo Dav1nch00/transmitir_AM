@@ -321,6 +321,13 @@ class Player:
 
     def stop(self) -> None:
         self._stop.set()
+        # Esperar a que el hilo cierre el flujo de PyAudio antes de que otro
+        # reproductor abra uno nuevo.  Sin esto, detener e iniciar audios muy
+        # seguidos puede dejar dos flujos compitiendo por el dispositivo.
+        thread = self._thread
+        if (thread is not None and thread.is_alive()
+                and thread is not threading.current_thread()):
+            thread.join(timeout=0.5)
 
     def _run(self) -> None:
         try:

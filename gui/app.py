@@ -14,6 +14,7 @@ from .tab_espectro import TabEspectro
 from .tab_nyquist import TabNyquist
 from .tab_enviar import TabEnviar
 from .tab_recibir import TabRecibir
+from .tab_comparar import TabComparar
 
 
 class App(tk.Tk):
@@ -21,7 +22,7 @@ class App(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("RETICO — Digitalización y transmisión AM")
+        self.title("RETICO — Digitalización y transmisión de señales")
         self.geometry("1320x900")
         self.minsize(1100, 760)
 
@@ -30,6 +31,15 @@ class App(tk.Tk):
         self._digitized: Digitized | None = None
         self._digitized_key: tuple | None = None
         self.status_label: ttk.Label | None = None
+
+        # Última modulación generada; la pestaña de recepción la usa para
+        # autocompletar la técnica y los parámetros de demodulación.
+        self.last_transmission: dict | None = None
+        self.last_transmission_serial = 0
+        # Audio de referencia usado por el transmisor y última demodulación:
+        # la pestaña de comparación los usa para no perder el original.
+        self.last_transmission_reference: Audio | None = None
+        self.last_demodulation: Audio | None = None
 
         self._build_vars()
         self._build_style()
@@ -67,10 +77,13 @@ class App(tk.Tk):
     def _build_layout(self) -> None:
         header = ttk.Frame(self, padding=(12, 8, 12, 2))
         header.pack(side="top", fill="x")
-        ttk.Label(header, text="RETICO — Digitalización y transmisión AM", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(header, text="RETICO — Digitalización y transmisión de señales",
+                  style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             header,
-            text="Grabación · muestreo · cuantización · FFT · Nyquist y reconstrucción · transmisión y recepción AM",
+            text="Grabación · muestreo · cuantización · FFT · Nyquist y reconstrucción · "
+                 "modulación AM/FM/ASK/FSK/PSK/QAM/GFSK/MFSK · "
+                 "recepción y demodulación · comparación original/recuperada",
             style="Subtitle.TLabel",
         ).pack(anchor="w")
 
@@ -120,17 +133,19 @@ class App(tk.Tk):
         self.tab_recon = TabNyquist(self.notebook, self, mode="recon")
         self.tab_enviar = TabEnviar(self.notebook, self)
         self.tab_recibir = TabRecibir(self.notebook, self)
+        self.tab_comparar = TabComparar(self.notebook, self)
         self.tabs = [self.tab_captura, self.tab_digitalizacion,
                      self.tab_espectro, self.tab_nyquist, self.tab_recon,
-                     self.tab_enviar, self.tab_recibir]
+                     self.tab_enviar, self.tab_recibir, self.tab_comparar]
 
         self.notebook.add(self.tab_captura, text="1. Captura")
         self.notebook.add(self.tab_digitalizacion, text="2. Digitalización y cuantización")
         self.notebook.add(self.tab_espectro, text="3. FFT y espectro")
         self.notebook.add(self.tab_nyquist, text="4. Nyquist y aliasing")
         self.notebook.add(self.tab_recon, text="5. Reconstrucción")
-        self.notebook.add(self.tab_enviar, text="6. Transmitir AM")
-        self.notebook.add(self.tab_recibir, text="7. Recibir AM")
+        self.notebook.add(self.tab_enviar, text="6. Modulación y transmisión")
+        self.notebook.add(self.tab_recibir, text="7. Recepción y demodulación")
+        self.notebook.add(self.tab_comparar, text="8. Comparación de audio")
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         status = ttk.Frame(self)

@@ -40,7 +40,7 @@ class TabRecibir(PlotTab):
         self._player: Player | None = None
         self._poll_id: str | None = None
         self._player_poll_id: str | None = None
-        self._duration = 7.0
+        self._duration = 20.0
 
         self._received: Audio | None = None
         self._demod: Audio | None = None
@@ -50,7 +50,7 @@ class TabRecibir(PlotTab):
 
         self.device_var = tk.StringVar()
         self.fs_var = tk.StringVar(value="44100")
-        self.duration_var = tk.DoubleVar(value=7.0)
+        self.duration_var = tk.DoubleVar(value=20.0)
         self.level_var = tk.DoubleVar(value=0.0)
         self.tech_var = tk.StringVar(value="AM")
         self.source_var = tk.StringVar(value=SRC_MIC)
@@ -58,13 +58,13 @@ class TabRecibir(PlotTab):
         self.cutoff_var = tk.StringVar(value="4000")
         self.gain_var = tk.StringVar(value="0")
         self.fm_dev_var = tk.StringVar(value="3000")
-        self.baud_var = tk.StringVar(value="2000")
+        self.baud_var = tk.StringVar(value="4000")
         self.bps_var = tk.StringVar(value="2")
         self.pcm_bits_var = tk.StringVar(
             value=self._app_int("bits_var", 8))
         self.audio_fs_var = tk.StringVar(
             value=self._app_int("fs_var", 16000))
-        self.dig_dev_var = tk.StringVar(value="3000")
+        self.dig_dev_var = tk.StringVar(value="6000")
         self.bt_var = tk.StringVar(value="0.5")
         self.find_start_var = tk.BooleanVar(value=True)
         self.record_info = tk.StringVar(value="Sin recibir.")
@@ -139,7 +139,7 @@ class TabRecibir(PlotTab):
                      values=["44100", "48000"]).pack(side="left", padx=(0, 12))
 
         ttk.Label(mic, text="Duración (s)").pack(side="left", padx=(0, 4))
-        ttk.Spinbox(mic, from_=3, to=15, increment=1,
+        ttk.Spinbox(mic, from_=3, to=60, increment=1,
                     textvariable=self.duration_var, width=5).pack(
             side="left", padx=(0, 12))
 
@@ -238,7 +238,9 @@ class TabRecibir(PlotTab):
             text="Elija la técnica y el origen, ajuste los parámetros y pulse "
                  "«Demodular». En el micrófono se busca automáticamente el "
                  "inicio de la ráfaga; para un WAV generado por la aplicación "
-                 "la señal empieza en la muestra 0.",
+                 "la señal empieza en la muestra 0. Para recibir una señal "
+                 "digital larga por micrófono, use una «Duración (s)» mayor "
+                 "que la duración de la señal generada en la pestaña 6.",
             style="Subtitle.TLabel", wraplength=1240, justify="left").pack(
             anchor="w", pady=(2, 0))
 
@@ -343,9 +345,9 @@ class TabRecibir(PlotTab):
             messagebox.showerror("Recepción",
                                  "La fs y la duración deben ser numéricas.")
             return
-        if not 3.0 <= duration <= 15.0:
+        if not 3.0 <= duration <= 60.0:
             messagebox.showerror("Recepción",
-                                 "La duración debe estar entre 3 y 15 s.")
+                                 "La duración debe estar entre 3 y 60 s.")
             return
         self._duration = duration
         self._recorder = MicRecorder(fs=fs, device=self._selected_device())
@@ -651,13 +653,13 @@ class TabRecibir(PlotTab):
         if tech == "FM":
             self.fm_dev_var.set(self._fmt(cfg.get("fm_dev"), 3000.0))
         if tech in DIGITAL_TECHNIQUES:
-            self.baud_var.set(self._fmt(cfg.get("baud"), 2000.0))
+            self.baud_var.set(self._fmt(cfg.get("baud"), 4000.0))
             bps = cfg.get("bps")
             if bps is not None:
                 self.bps_var.set(str(int(bps)))
             self.pcm_bits_var.set(self._fmt(cfg.get("pcm_bits"), 8))
             self.audio_fs_var.set(self._fmt(cfg.get("audio_fs"), 16000.0))
-            self.dig_dev_var.set(self._fmt(cfg.get("dig_dev"), 3000.0))
+            self.dig_dev_var.set(self._fmt(cfg.get("dig_dev"), 6000.0))
             self.bt_var.set(self._fmt(cfg.get("bt"), 0.5))
         self._on_technique_changed()
         self.app.set_status(

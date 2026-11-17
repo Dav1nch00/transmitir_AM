@@ -7,8 +7,25 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from matplotlib import rcParams
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
+
+# Tipografía y espaciado compactos: con ventanas pequeñas o escalado de
+# Windows, los títulos y etiquetas grandes dejan muy poco alto para las
+# trazas.  Estos valores son globales para todas las pestañas.
+rcParams.update({
+    "axes.titlesize": 10,
+    "axes.titlepad": 2.5,
+    "axes.labelsize": 8,
+    "axes.labelpad": 1.5,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "legend.fontsize": 8,
+    "legend.borderpad": 0.3,
+    "legend.labelspacing": 0.25,
+    "figure.titlesize": 10,
+})
 
 
 def output_dir() -> Path:
@@ -50,21 +67,29 @@ class PlotTab(ttk.Frame):
         self._dirty = True
 
         self.controls = ttk.Frame(self, padding=(10, 8, 10, 4))
-        self.figure = Figure(figsize=(10.5, 5.2), dpi=100, constrained_layout=True)
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self)
-        self.toolbar = NavigationToolbar2Tk(self.canvas, self, pack_toolbar=False)
-        self.toolbar.update()
         self.footer = ttk.Frame(self)
         self.plot_frame = ttk.Frame(self)
         self.save_strip = ttk.Frame(self)
         self.save_info = tk.StringVar(value="")
+        # El lienzo debe ser hijo de ``plot_frame``: si se crea como hijo de la
+        # pestaña y solo se empaqueta con ``in_``, ``plot_frame`` (creado
+        # después) queda por encima en el orden de apilado y tapa la gráfica.
+        self.figure = Figure(figsize=(10.5, 5.2), dpi=100, constrained_layout=True)
+        self.figure.set_constrained_layout_pads(
+            w_pad=0.03, h_pad=0.015, wspace=0.0, hspace=0.0)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.plot_frame)
+        self.toolbar = NavigationToolbar2Tk(self.canvas, self, pack_toolbar=False)
+        self.toolbar.update()
 
         self.controls.pack(side="top", fill="x")
-        self.toolbar.pack(side="bottom", fill="x")
+        # Orden visual de arriba a abajo: controles, gráfica, barra de
+        # Matplotlib, barra de guardado y pie (tabla).  El primer widget
+        # empaquetado abajo queda en el borde inferior.
         self.footer.pack(side="bottom", fill="x")
         self.save_strip.pack(side="bottom", fill="x")
+        self.toolbar.pack(side="bottom", fill="x")
         self.plot_frame.pack(side="top", fill="both", expand=True)
-        self.canvas.get_tk_widget().pack(in_=self.plot_frame, fill="both", expand=True)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
 
         ttk.Button(self.save_strip, text="💾 Guardar gráfica",
                    command=self.save_figure).pack(side="left", padx=(10, 6), pady=3)
@@ -74,6 +99,20 @@ class PlotTab(ttk.Frame):
     # -- ciclo de vida -----------------------------------------------------
     def mark_dirty(self) -> None:
         self._dirty = True
+
+    def show_footer(self, visible: bool) -> None:
+        """Muestra u oculta el pie de la pestaña (tablas, notas, etc.).
+
+        Al ocultarlo, ``plot_frame`` recupera todo el alto disponible en lugar
+        de dejar una banda vacía.  El pie se vuelve a empaquetar en su sitio
+        original, debajo de la barra de guardado.
+        """
+        if visible:
+            if not self.footer.winfo_manager():
+                self.footer.pack(side="bottom", fill="x",
+                                 before=self.save_strip)
+        elif self.footer.winfo_manager():
+            self.footer.pack_forget()
 
     def on_show(self) -> None:
         if self._dirty:

@@ -68,7 +68,7 @@ class TabDigitalizacion(PlotTab):
         }
         widths = {"n": 55, "t": 75, "x": 85, "v": 95, "q": 60, "code": 70,
                   "bin": 95, "vdac": 90, "err": 85}
-        self.table = ttk.Treeview(left, columns=columns, show="headings", height=7)
+        self.table = ttk.Treeview(left, columns=columns, show="headings", height=5)
         for col in columns:
             self.table.heading(col, text=headings[col])
             self.table.column(col, width=widths[col], anchor="center", stretch=False)
@@ -105,6 +105,7 @@ class TabDigitalizacion(PlotTab):
 
     # ------------------------------------------------------------------
     def _refresh_digitalization(self, d) -> None:
+        self.show_footer(True)
         if not self.table_frame.winfo_manager():
             self.table_frame.pack(fill="x")
 
@@ -187,9 +188,7 @@ class TabDigitalizacion(PlotTab):
             f"SQNR medida = {q.sqnr_db:.2f} dB · esperada = {q.sqnr_expected_db:.2f} dB · "
             f"senoide a plena escala = 6.02·N + 1.76 = {q.sqnr_sine_db:.2f} dB · "
             f"ENOB = {q.enob:.2f} bits\n"
-            f"{pcm_label} (primeras 12 muestras): {pcm}\n"
-            f"El selector «Mostrar resolución en» cambia solo la visualización: "
-            f"no vuelve a digitalizar ni recarga el audio."
+            f"{pcm_label} (primeras 12 muestras): {pcm}"
         )
         self._fill_table(t_n, x_n, d, min(40, n), unit=unit)
 
@@ -197,6 +196,7 @@ class TabDigitalizacion(PlotTab):
     def _refresh_nyquist(self, d) -> None:
         if self.table_frame.winfo_manager():
             self.table_frame.pack_forget()
+        self.show_footer(False)
 
         p = d.params
         fs = float(d.fs_eff)

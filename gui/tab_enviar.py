@@ -23,6 +23,7 @@ from .widgets import PlotTab, output_dir, timestamp
 
 TECHNIQUES = ANALOG_TECHNIQUES + DIGITAL_TECHNIQUES
 FS_TX = 44100.0
+MAX_MOD_DURATION = 120.0  # duración máxima de la señal modulada, en segundos
 
 
 class TabEnviar(PlotTab):
@@ -32,11 +33,12 @@ class TabEnviar(PlotTab):
         self.carrier_var = tk.StringVar(value="10000")
         self.index_var = tk.StringVar(value="0.95")
         self.fm_dev_var = tk.StringVar(value="3000")
-        self.baud_var = tk.StringVar(value="2000")
+        self.baud_var = tk.StringVar(value="4000")
         self.bps_var = tk.StringVar(value="2")
-        self.dig_dev_var = tk.StringVar(value="3000")
+        self.dig_dev_var = tk.StringVar(value="6000")
         self.bt_var = tk.StringVar(value="0.5")
-        self.pcm_samples_var = tk.StringVar(value="1024")
+        self.audio_seconds_var = tk.StringVar(value="2.0")
+        self.dig_est_var = tk.StringVar(value="")
         self.source_var = tk.StringVar(value="Señal digitalizada (DAC)")
         self.status_tx = tk.StringVar(value="Sin generar.")
         self.info_var = tk.StringVar(value="")
@@ -134,11 +136,14 @@ class TabEnviar(PlotTab):
         ttk.Label(self.frame_dig, textvariable=self.mod_label_var,
                   style="Subtitle.TLabel").pack(side="left", padx=(0, 14))
 
-        ttk.Label(self.frame_dig, text="Muestras PCM").pack(side="left",
-                                                            padx=(0, 4))
-        ttk.Spinbox(self.frame_dig, from_=16, to=200000, increment=256,
-                    textvariable=self.pcm_samples_var, width=8).pack(
-            side="left", padx=(0, 16))
+        ttk.Label(self.frame_dig, text="Audio (s)").pack(side="left",
+                                                         padx=(0, 4))
+        self.audio_sec_spin = ttk.Spinbox(
+            self.frame_dig, from_=0.2, to=8.0, increment=0.5,
+            textvariable=self.audio_seconds_var, width=6)
+        self.audio_sec_spin.pack(side="left", padx=(0, 4))
+        ttk.Label(self.frame_dig, textvariable=self.dig_est_var,
+                  style="Subtitle.TLabel").pack(side="left", padx=(0, 14))
 
         self.frame_dev = ttk.Frame(self.dyn_frame)
         ttk.Label(self.frame_dev, text="Desviación Δf (Hz)").pack(
@@ -161,9 +166,13 @@ class TabEnviar(PlotTab):
 
         ttk.Label(
             c,
-            text="AM y FM usan toda la banda base. Las técnicas digitales convierten "
-                 "en bits las primeras «Muestras PCM». Tras generar puede guardar el "
-                 "WAV o transmitir la señal por el altavoz.",
+            text="AM y FM usan toda la banda base. Las técnicas digitales "
+                 "convierten en bits los segundos de audio indicados en "
+                 "«Audio (s)» y el resto del audio no se transmite. La señal "
+                 "modulada ocupa más tiempo cuanto más larga sea esa duración, "
+                 "cuantos más bits PCM tenga y menos baudios se usen. Tras "
+                 "generar puede guardar el WAV o transmitir la señal por el "
+                 "altavoz.",
             style="Subtitle.TLabel", wraplength=1150, justify="left").pack(
             anchor="w", pady=(4, 0))
 
@@ -171,9 +180,15 @@ class TabEnviar(PlotTab):
             c,
             text="Después de generar, la pestaña 7 (Recibir) adopta "
                  "automáticamente la técnica y los parámetros de esta "
-                 "transmisión para demodularla.",
+                 "transmisión para demodularla. Si va a recibir la señal por "
+                 "micrófono, ajuste allí una «Duración (s)» mayor que la "
+                 "duración de la señal modulada.",
             style="Subtitle.TLabel", wraplength=1150, justify="left").pack(
             anchor="w", pady=(2, 0))
+
+        for var in (self.baud_var, self.bps_var, self.audio_seconds_var,
+                    self.source_var):
+            var.trace_add("write", lambda *_args: self._update_dig_estimate())
 
     # ------------------------------------------------------------------
     def _on_technique_changed(self, _event=None) -> None:
@@ -215,6 +230,65 @@ class TabEnviar(PlotTab):
             self.mod_label_var.set(f"M = {m}")
         else:
             self.mod_label_var.set("")
+        self._update_dig_estimate()
+
+    # ------------------------------------------------------------------
+    def _source_fs(self) -> float | None:
+        """Frecuencia de muestreo del audio que entraría al modulador."""
+        if self.source_var.get().startswith("Señal digitalizada"):
+            try:
+                return float(self.app.current_params().fs_target)
+            except Exception:  # noqa: BLE001
+                pass
+        audio = getattr(self.app, "audio", None)
+        if audio is not None:
+            return float(audio.fs)
+        return None
+
+    def _source_len(self) -> int | None:
+        """Cantidad de muestras disponibles en la fuente elegida."""
+        audio = getattr(self.app, "audio", None)
+        if audio is None:
+            return None
+        if self.source_var.get().startswith("Señal digitalizada"):
+            try:
+                p = self.app.current_params()
+                return max(1, int(round(audio.duration * p.fs_target)))
+            except Exception:  # noqa: BLE001
+                return None
+        return len(audio.x)
+
+    def _update_dig_estimate(self, _event=None) -> None:
+        """Muestra cuánto durará el audio útil y la señal modulada."""
+        tech = self.tech_var.get()
+        if tech not in DIGITAL_TECHNIQUES:
+            self.dig_est_var.set("")
+            return
+        try:
+            seconds = self._num(self.audio_seconds_var, "Audio")
+            baud = self._num(self.baud_var, "Baudios")
+            bps = max(1, int(self.bps_var.get()))
+            pcm_bits = int(self.app.bits_var.get())
+        except (ModulationError, tk.TclError, ValueError):
+            self.dig_est_var.set("")
+            return
+        fs_in = self._source_fs()
+        if fs_in is None or fs_in <= 0.0 or baud <= 0.0 or pcm_bits < 1:
+            self.dig_est_var.set("")
+            return
+        available = self._source_len()
+        requested = max(1, int(round(seconds * fs_in)))
+        used = requested if available is None else min(requested, available)
+        used_seconds = used / fs_in
+        symbols = -(-(used * pcm_bits) // bps)
+        duration = symbols / baud
+        text = f"≈ {used_seconds:.2f} s de audio → {duration:.1f} s de señal"
+        if available is not None and requested > available:
+            text = (f"≈ {used_seconds:.2f} s de audio (máx. "
+                    f"{available / fs_in:.2f} s) → {duration:.1f} s de señal")
+        if duration > MAX_MOD_DURATION:
+            text += f" · máx. {MAX_MOD_DURATION:.0f} s"
+        self.dig_est_var.set(text)
 
     # ------------------------------------------------------------------
     def _invalidate_generated(self, _event=None) -> None:
@@ -233,6 +307,7 @@ class TabEnviar(PlotTab):
     def mark_dirty(self) -> None:
         super().mark_dirty()
         self._invalidate_generated()
+        self._update_dig_estimate()
 
     # ------------------------------------------------------------------
     def _num(self, var: tk.StringVar, name: str) -> float:
@@ -298,9 +373,9 @@ class TabEnviar(PlotTab):
             "technique": tech,
             "carrier": float(carrier),
             "fm_dev": self._try_num(self.fm_dev_var, 3000.0),
-            "baud": self._try_num(self.baud_var, 2000.0),
+            "baud": self._try_num(self.baud_var, 4000.0),
             "bps": self._try_int(self.bps_var, 2),
-            "dig_dev": self._try_num(self.dig_dev_var, 3000.0),
+            "dig_dev": self._try_num(self.dig_dev_var, 6000.0),
             "bt": self._try_num(self.bt_var, 0.5),
             "pcm_bits": self._last_pcm_bits,
             "audio_fs": self._last_audio_fs,
@@ -311,7 +386,13 @@ class TabEnviar(PlotTab):
 
         self.save_btn.configure(state="normal")
         self.tx_btn.configure(state="normal")
-        self.status_tx.set(f"{tech} generada · {len(signal) / fs_tx:.2f} s")
+        if is_digital and self._reference_audio is not None:
+            audio_duration = self._reference_audio.duration
+            self.status_tx.set(
+                f"{tech} generada · señal {len(signal) / fs_tx:.2f} s · "
+                f"audio {audio_duration:.2f} s")
+        else:
+            self.status_tx.set(f"{tech} generada · {len(signal) / fs_tx:.2f} s")
         self.app.set_status(f"Señal {tech} generada. Guárdela o transmítala.")
         self.refresh()
 
@@ -378,8 +459,13 @@ class TabEnviar(PlotTab):
             ref_full = np.asarray(audio.x, dtype=np.float64)
             ref_label = "audio original"
 
-        samples = int(round(self._num(self.pcm_samples_var, "Muestras PCM")))
-        samples = max(1, min(samples, len(codes)))
+        seconds = self._num(self.audio_seconds_var, "Audio")
+        if not 0.05 <= seconds <= 60.0:
+            raise ModulationError(
+                "La duración de audio debe estar entre 0.05 y 60 s.")
+        samples = max(1, int(round(seconds * fs_in)))
+        samples = min(samples, len(codes))
+        used_seconds = samples / fs_in
         bits = bits_from_codes(codes[:samples], pcm_bits)
         self._reference_audio = Audio(
             x=ref_full[:samples], fs=int(round(fs_in)),
@@ -387,25 +473,26 @@ class TabEnviar(PlotTab):
             path="", channels=1, bits=16, is_float=True)
 
         baud = self._num(self.baud_var, "Baudios")
-        bps = int(self.bps_var.get())
+        bps = max(1, int(self.bps_var.get()))
         dev = self._num(self.dig_dev_var, "Desviación Δf")
         bt = self._num(self.bt_var, "Producto BT")
 
-        symbols = -(-bits.size // max(1, bps))
+        symbols = -(-bits.size // bps)
         est_duration = symbols / baud if baud > 0 else float("inf")
-        if est_duration > 60.0:
+        if est_duration > MAX_MOD_DURATION:
             raise ModulationError(
-                f"La señal modulada duraría {est_duration:.0f} s. "
-                "Reduzca «Muestras PCM» o aumente los baudios.")
+                f"La señal modulada duraría {est_duration:.0f} s "
+                f"(máximo {MAX_MOD_DURATION:.0f} s). Reduzca «Audio (s)» "
+                "o aumente los baudios.")
 
         result = modulate_digital(tech, bits, FS_TX, carrier_freq=carrier,
                                   symbol_rate=baud, bits_per_symbol=bps,
                                   deviation=dev, bt=bt)
         self._last_pcm_bits = int(pcm_bits)
         self._last_audio_fs = float(fs_in)
-        info = (f"{result.info} · {samples} muestras PCM de {pcm_bits} bits "
-                f"({bits.size} bits, fs original {fs_in:.0f} Hz) · "
-                f"salida a {result.fs} Hz")
+        info = (f"{result.info} · audio útil = {used_seconds:.2f} s "
+                f"({samples} muestras PCM de {pcm_bits} bits, fs original "
+                f"{fs_in:.0f} Hz) · salida a {result.fs} Hz")
         return result.base, result.fs, result.signal, info, baud
 
     # ------------------------------------------------------------------

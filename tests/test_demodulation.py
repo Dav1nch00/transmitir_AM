@@ -125,6 +125,52 @@ class TestDigitalDemodulation(unittest.TestCase):
             demodulate_digital("PSK", mod.signal, FS, CARRIER, BAUD, 2, 16,
                                find_start=False)
 
+    def test_long_signal_recovers_more_than_one_second(self) -> None:
+        """Una señal larga ya no se recorta a una fracción de segundo."""
+        fs_in = 16000
+        t = np.arange(int(1.2 * fs_in)) / fs_in
+        x = 0.7 * np.sin(2.0 * np.pi * 440.0 * t)
+        codes = np.clip(np.round((x + 1.0) * 127.5), 0, 255).astype(np.uint32)
+        bits = bits_from_codes(codes, 8)
+        mod = modulate_digital("FSK", bits, fs=FS, carrier_freq=CARRIER,
+                               symbol_rate=4000.0, bits_per_symbol=2,
+                               deviation=6000.0)
+        demod = demodulate_digital(
+            "FSK", mod.signal, FS, CARRIER, 4000.0, 2, 8,
+            audio_fs=fs_in, deviation=6000.0, find_start=False)
+        self.assertGreaterEqual(demod.signal.size, int(1.1 * fs_in))
+        n = min(codes.size, demod.signal.size)
+        corr = float(np.corrcoef(codes[:n], demod.signal[:n])[0, 1])
+        self.assertGreater(corr, 0.99)
+
+    def test_max_symbols_can_limit_the_output(self) -> None:
+        bits = random_bits(4000, seed=3)
+        mod = modulate_digital("PSK", bits, fs=FS, carrier_freq=CARRIER,
+                               symbol_rate=BAUD, bits_per_symbol=2)
+        demod = demodulate_digital(
+            "PSK", mod.signal, FS, CARRIER, BAUD, 2, 8,
+            audio_fs=16000.0, find_start=False, max_symbols=100)
+        self.assertLessEqual(demod.symbols.size, 100)
+
+    def test_psk_burst_search_keeps_the_pcm_framing(self) -> None:
+        """Con silencio alrededor, la ráfaga no desalinea las muestras PCM."""
+        fs_in = 16000
+        t = np.arange(fs_in) / fs_in
+        x = (0.6 * np.sin(2.0 * np.pi * 440.0 * t)
+             + 0.3 * np.sin(2.0 * np.pi * 880.0 * t))
+        codes = np.clip(np.round((x + 1.0) * 127.5), 0, 255).astype(np.uint32)
+        bits = bits_from_codes(codes, 8)
+        mod = modulate_digital("PSK", bits, fs=FS, carrier_freq=CARRIER,
+                               symbol_rate=4000.0, bits_per_symbol=2)
+        pad = np.zeros(int(0.5 * FS))
+        received = np.concatenate([pad, mod.signal, pad])
+        demod = demodulate_digital(
+            "PSK", received, FS, CARRIER, 4000.0, 2, 8,
+            audio_fs=fs_in, find_start=True)
+        self.assertEqual(demod.signal.size, codes.size)
+        corr = float(np.corrcoef(codes, demod.signal)[0, 1])
+        self.assertGreater(corr, 0.99)
+
 
 if __name__ == "__main__":
     unittest.main()

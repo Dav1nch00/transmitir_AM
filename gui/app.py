@@ -15,6 +15,8 @@ from .tab_nyquist import TabNyquist
 from .tab_enviar import TabEnviar
 from .tab_recibir import TabRecibir
 from .tab_comparar import TabComparar
+from .tab_pcm import TabPCM
+from .tab_constelacion import TabConstelacion
 
 
 class App(tk.Tk):
@@ -23,8 +25,23 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("RETICO — Digitalización y transmisión de señales")
-        self.geometry("1320x900")
-        self.minsize(1100, 760)
+        # Ajustar el tamaño inicial al área útil de la pantalla: con escalado
+        # de Windows una ventana fija de 900 px de alto queda por debajo de la
+        # barra de tareas y se pierde el pie de las pestañas (tabla, barra de
+        # Matplotlib, botones de guardado).
+        work_w, work_h, work_x, work_y = self._work_area()
+        # ``geometry`` fija el área cliente: hay que descontar el marco y la
+        # barra de título para que la ventana completa quepa en el escritorio.
+        self.update_idletasks()
+        frame_w = max(0, self.winfo_rootx() - self.winfo_x())
+        frame_h = max(0, self.winfo_rooty() - self.winfo_y())
+        margin = 12
+        width = min(1320, max(1100, work_w - frame_w - margin))
+        height = min(900, max(680, work_h - frame_h - margin))
+        x = work_x + max(0, (work_w - width - frame_w) // 2)
+        y = work_y + max(0, (work_h - height - frame_h) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
+        self.minsize(1100, 680)
 
         self.audio: Audio | None = None
         self._audio_serial = 0
@@ -45,6 +62,29 @@ class App(tk.Tk):
         self._build_style()
         self._build_layout()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _work_area(self) -> tuple[int, int, int, int]:
+        """Área útil del escritorio (sin barra de tareas) en unidades de Tk.
+
+        En Windows se consulta ``SPI_GETWORKAREA``; en otros sistemas se usa
+        la pantalla completa como aproximación.  El resultado se convierte de
+        píxeles físicos a unidades lógicas de Tk para que funcione también con
+        el escalado de pantalla de Windows.
+        """
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            rect = wintypes.RECT()
+            if ctypes.windll.user32.SystemParametersInfoW(
+                    0x0030, 0, ctypes.byref(rect), 0):  # SPI_GETWORKAREA
+                scale = max(1.0, float(self.winfo_fpixels("1i")) / 96.0)
+                return (int((rect.right - rect.left) / scale),
+                        int((rect.bottom - rect.top) / scale),
+                        int(rect.left / scale), int(rect.top / scale))
+        except Exception:  # noqa: BLE001 - fuera de Windows o sin permisos
+            pass
+        return self.winfo_screenwidth(), self.winfo_screenheight(), 0, 0
 
     # -- variables ---------------------------------------------------------
     def _build_vars(self) -> None:
@@ -82,8 +122,8 @@ class App(tk.Tk):
         ttk.Label(
             header,
             text="Grabación · muestreo · cuantización · FFT · Nyquist y reconstrucción · "
-                 "modulación AM/FM/ASK/FSK/PSK/QAM/GFSK/MFSK · "
-                 "recepción y demodulación · comparación original/recuperada",
+                 "PCM · constelaciones · AM/FM/ASK/FSK/PSK/QAM/GFSK/MFSK · "
+                 "recepción/demodulación · comparación original/recuperada",
             style="Subtitle.TLabel",
         ).pack(anchor="w")
 
@@ -134,9 +174,12 @@ class App(tk.Tk):
         self.tab_enviar = TabEnviar(self.notebook, self)
         self.tab_recibir = TabRecibir(self.notebook, self)
         self.tab_comparar = TabComparar(self.notebook, self)
+        self.tab_pcm = TabPCM(self.notebook, self)
+        self.tab_constelacion = TabConstelacion(self.notebook, self)
         self.tabs = [self.tab_captura, self.tab_digitalizacion,
                      self.tab_espectro, self.tab_nyquist, self.tab_recon,
-                     self.tab_enviar, self.tab_recibir, self.tab_comparar]
+                     self.tab_enviar, self.tab_recibir, self.tab_comparar,
+                     self.tab_pcm, self.tab_constelacion]
 
         self.notebook.add(self.tab_captura, text="1. Captura")
         self.notebook.add(self.tab_digitalizacion, text="2. Digitalización y cuantización")
@@ -146,6 +189,8 @@ class App(tk.Tk):
         self.notebook.add(self.tab_enviar, text="6. Modulación y transmisión")
         self.notebook.add(self.tab_recibir, text="7. Recepción y demodulación")
         self.notebook.add(self.tab_comparar, text="8. Comparación de audio")
+        self.notebook.add(self.tab_pcm, text="9. PCM y trama serie")
+        self.notebook.add(self.tab_constelacion, text="10. Constelación")
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         status = ttk.Frame(self)

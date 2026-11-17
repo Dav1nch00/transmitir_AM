@@ -2,19 +2,22 @@
 
 Aplicación de escritorio en Python (Tkinter + Matplotlib) para grabar audio,
 digitalizarlo, analizarlo con FFT y estudiar muestreo, cuantización, Nyquist,
-aliasing y reconstrucción. Incluye además la modulación, transmisión acústica
-y recepción/demodulación de la señal con AM, FM o técnicas digitales
-(ASK, FSK, PSK, QAM, GFSK y MFSK).
+aliasing y reconstrucción. Incluye además el estudio de la trama PCM y de los
+códigos de línea, las constelaciones de PCM/PAM y de las técnicas digitales, y
+la modulación, transmisión acústica y recepción/demodulación de la señal con
+AM, FM o técnicas digitales (ASK, FSK, PSK, QAM, GFSK y MFSK).
 
 El flujo completo es:
 
 ```
 micrófono / WAV  →  x(t)  →  muestreo fs  →  cuantización N bits  →  tramas PCM
-                                      │
-                                      ├── FFT y espectrograma
+                                      │                              ├── palabras y trama serie
+                                      │                              └── constelación PCM/PAM
+                                      ├── FFT y espectro
                                       ├── Nyquist y aliasing
                                       ├── reconstrucción DAC / sinc
                                       └── modulación: AM · FM · ASK · FSK · PSK · QAM · GFSK · MFSK
+                                             ├── constelación de la técnica
                                              ├── WAV de la señal modulada
                                              └── altavoz ── aire ── micrófono ── demodulación
                                                                         (AM · FM · ASK · FSK · PSK · QAM · GFSK · MFSK)
@@ -57,6 +60,8 @@ transmitir_AM/
 │   ├── audio_io.py          micrófono, lectura/escritura WAV y reproducción
 │   ├── dsp.py               FFT, ventanas, remuestreo, aliasing, sinc y STFT
 │   ├── quantization.py      ADC/DAC, Δ, códigos binarios, error y SQNR
+│   ├── pcm.py               palabras, trama serie y códigos de línea PCM
+│   ├── constellation.py     constelaciones I/Q y de frecuencia
 │   ├── pipeline.py          cadena audio → x[n] → cuantización
 │   ├── am.py                modulación y demodulación AM (DSB-FC)
 │   ├── modulation.py        FM y modulación/demodulación digital
@@ -71,8 +76,10 @@ transmitir_AM/
 │   ├── tab_nyquist.py       pestañas 4 y 5 (aliasing y reconstrucción)
 │   ├── tab_enviar.py        pestaña 6 (modulación y transmisión)
 │   ├── tab_recibir.py       pestaña 7 (recepción y demodulación)
-│   └── tab_comparar.py      pestaña 8 (comparación de audio)
-├── tests/                   pruebas del núcleo, AM, modulación y demodulación
+│   ├── tab_comparar.py      pestaña 8 (comparación de audio)
+│   ├── tab_pcm.py           pestaña 9 (PCM y trama serie)
+│   └── tab_constelacion.py  pestaña 10 (constelaciones)
+├── tests/                   pruebas del núcleo, PCM, modulación y demodulación
 ├── salidas/                 WAV, CSV y figuras exportadas
 └── referencia/              scripts originales de apoyo (Emisor.py, Receptor.py, enviar_recibir.py)
 ```
@@ -122,7 +129,6 @@ transmitir_AM/
 - Espectro unilateral de amplitud en V o dBV, para la señal original y para x[n].
 - Frecuencia del pico, ancho de banda al 99 % de la energía, centroide espectral
   y resolución `Δf = fs/N`.
-- Espectrograma (STFT) de la señal digitalizada.
 
 ### 4. Nyquist, aliasing y reconstrucción
 
@@ -161,7 +167,11 @@ Dos vistas:
   - ASK/PSK/QAM: portadora, baudios y bits por símbolo (M = 2^bps; QAM admite
     2, 4 o 6 bits/símbolo).
   - FSK/MFSK/GFSK: además, desviación Δf; GFSK agrega el producto BT.
-  - Técnicas digitales: número de muestras PCM que se convierten en bits.
+  - Técnicas digitales: duración del audio que se convierte en bits
+    (**Audio (s)**, 2 s por defecto). La interfaz muestra la estimación
+    «audio → duración de la señal modulada»; la señal ocupa más tiempo cuanto
+    más larga sea esa duración, cuantos más bits PCM tenga y menos baudios se
+    usen.
 - La banda base analógica se normaliza y remuestrea a 44100 Hz con antialiasing.
 - **Generar modulada** calcula la señal y la grafica (banda base/bits y señal
   modulada).
@@ -177,8 +187,8 @@ parámetros → Demodular → ver la gráfica y escuchar/guardar el audio**.
 
 1. **Técnica de la señal recibida:** AM, FM, ASK, FSK, PSK, QAM, GFSK o MFSK.
 2. **Origen:**
-   - **Micrófono (escuchar):** captura la señal del aire (7 s a 44100 Hz por
-     defecto, configurable entre 3 y 15 s). Se busca automáticamente el inicio
+   - **Micrófono (escuchar):** captura la señal del aire (20 s a 44100 Hz por
+     defecto, configurable entre 3 y 60 s). Se busca automáticamente el inicio
      de la ráfaga.
    - **Archivo WAV modulado:** carga un WAV generado en la pestaña 6 (o
      cualquier WAV con la señal modulada). Se asume que la señal empieza en la
@@ -236,7 +246,55 @@ señales: cada una se dibuja en su propio eje.
   recuperado) en un WAV PCM de 16 bits.
 - **CSV:** exporta tiempo, A, B y error `B − A` (hasta 100 000 filas).
 
-### 9. Exportación
+### 9. PCM y trama serie
+
+Estudia la codificación PCM de la señal digitalizada, sin transmitirla:
+
+- **Vista superior:** muestreo y cuantización de la ventana elegida (`x(t)`,
+  `x(n)` y la escalera del DAC) con `fs`, bits por muestra y `Δ`.
+- **Vista inferior:** trama serie de las primeras palabras PCM, con el número
+  de palabra marcado en el eje y los bits de la primera palabra etiquetados.
+- **Código de línea seleccionable:** `NRZ unipolar`, `NRZ bipolar`,
+  `RZ unipolar` y `Manchester`. Las palabras se envían con el MSB primero.
+- **Controles:** ventana visible en ms (2 a 200) y número de palabras visibles
+  (1 a 32).
+- **Métricas:** `fs`, `Ts`, niveles, `Δ`, tasa PCM `fs·N` en bit/s y B/s,
+  duración de bit `Tb` y de palabra, y las primeras palabras en
+  `código:binario`.
+- **Tabla:** `n`, tiempo, `x(n)`, `q` con signo, código sin signo, `V_DAC` y
+  palabra PCM en binario. Se puede exportar a CSV.
+
+### 10. Constelación
+
+Muestra la constelación teórica de la técnica elegida y sus métricas. No
+necesita audio cargado.
+
+- **Técnicas:** `PCM (PAM)`, `ASK`, `PSK`, `QAM`, `FSK`, `MFSK` y `GFSK`.
+- **Bits/símbolo:** `M = 2^bps`. QAM admite 2, 4 y 6 bits/símbolo (4-QAM,
+  16-QAM y 64-QAM); PCM/PAM llega hasta 8 bits/símbolo.
+- **Ejemplo PCM de 5 bits:** al elegir `PCM (PAM)` se abre con una palabra de
+  ejemplo (`10110`), editable en el campo **Palabra PCM**. La pestaña muestra:
+  - el punto resaltado en la constelación de `M = 2^5 = 32` niveles;
+  - el código PCM `k`, el nivel PAM normalizado y la equivalencia con el ADC
+    (`q = k − M/2` y `V = q·2·Vref/M`);
+  - debajo, los 5 bits de la palabra en serie (MSB primero), relacionando la
+    palabra con la muestra PCM.
+  La palabra debe tener exactamente el número de bits elegido; si no, se
+  indica el error y no se resalta ningún punto.
+- **Eje I/Q** para PCM/PAM, ASK, PSK y QAM. En PCM/PAM el eje horizontal es
+  el código `k` y el vertical el nivel PAM; en el resto se usa el plano I/Q,
+  con etiquetas binarias (MSB primero) y circunferencia unitaria en PSK.
+- **Eje de frecuencia** para FSK, MFSK y GFSK: un tono por símbolo entre
+  `−1` y `+1` en frecuencia normalizada.
+- **Métricas:** número de símbolos, bits/símbolo, energía media y de pico,
+  PAPR, distancia mínima `d_min` y `d_min/√E`; en FSK, separación entre tonos.
+- **Tabla:** símbolo, bits, coordenadas I/Q (o frecuencia), amplitud y fase.
+  En PCM muestra código, palabra, nivel PAM y equivalencia con el ADC.
+  Exportable a CSV.
+- El mapeo coincide con el del modulador de la pestaña 6, de modo que la
+  constelación sirve para interpretar las señales transmitidas.
+
+### 11. Exportación
 
 - **Gráficas:** botón «Guardar gráfica» en la barra inferior de cada pestaña
   (PNG, PDF o SVG en `salidas/`). Guarda la figura completa de esa pestaña.
@@ -246,7 +304,8 @@ señales: cada una se dibuja en su propio eje.
   botón «WAV A → B» (original y recuperado en secuencia, sin mezcla).
 - **CSV de muestras:** pestaña 2, hasta 100 000 filas, en binario o en bytes
   hexadecimales según el selector Bit/Byte. Pestaña 8, comparación A/B/error
-  también hasta 100 000 filas.
+  también hasta 100 000 filas. Pestaña 9, muestras con su palabra PCM. Pestaña
+  10, tabla de símbolos de la constelación.
 - **Figuras:** además del botón propio, la barra de Matplotlib de cada pestaña
   permite guardar la figura.
 - Los botones de WAV, CSV y gráfica proponen la carpeta `salidas/` con marca
@@ -272,7 +331,12 @@ de bits y de códigos PCM para las seis técnicas digitales, la búsqueda del
 inicio de ráfaga y la validación de parámetros. Las pruebas de comparación
 (`tests/test_compare.py`) cubren la alineación con desfases positivos y
 negativos, el ajuste de ganancia, la inversión de polaridad, el remuestreo, el
-ruido, el silencio y la reproducción secuencial A → B.
+ruido, el silencio y la reproducción secuencial A → B. Las pruebas de PCM
+(`tests/test_pcm.py`) cubren métricas, palabras binarias, ida y vuelta
+códigos ↔ bits y los cuatro códigos de línea. Las de constelación
+(`tests/test_constellation.py`) comprueban el mapeo de cada técnica, el
+número de puntos, las etiquetas MSB primero, las métricas de distancia y la
+relación palabra PCM ↔ nivel PAM ↔ tensión del ADC.
 
 ## Limitaciones y notas
 
@@ -284,6 +348,10 @@ ruido, el silencio y la reproducción secuencial A → B.
   un Butterworth, pero su misión es la misma: atenuar lo que se pliega.
 - El WAV exportado es de 16 bits; la cuantización interna puede usar cualquier  
   resolución entre 2 y 24 bits.
+- En las técnicas digitales el audio recuperado conserva la duración del audio
+  transmitido. Con PCM de 8 bits y 2 bits/símbolo, 2 s de audio a 4000 baudios
+  ocupan unos 32 s de señal modulada; la generación se limita a 120 s, por lo
+  que conviene aumentar los baudios o reducir «Audio (s)» si se supera.
 - La recepción acústica funciona con todas las técnicas, pero es una
   demostración: la demodulación digital por micrófono puede tener errores de
   bit por ruido, eco y desincronización. Para una reconstrucción exacta conviene
@@ -295,6 +363,11 @@ ruido, el silencio y la reproducción secuencial A → B.
   por eso los filtros de recepción (que descartan unos milisegundos en los
   bordes) aparecen como un pequeño desfase. La comparación no corrige el nivel
   de forma automática salvo que se active «Ajustar ganancia».
+- La pestaña PCM usa los códigos PCM en offset binario del ADC; la constelación
+  PCM/PAM es la representación teórica con niveles centrados que emplea el
+  modulador de la pestaña 6.
+- La constelación es un diagrama ideal (sin ruido ni filtros). No estima la
+  constelación recibida a partir de la señal demodulada.
 - La aplicación no reemplaza un analizador de espectro calibrado: trabaja con  
   la escala del archivo y con Vref como referencia.
 

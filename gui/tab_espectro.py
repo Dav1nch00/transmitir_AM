@@ -1,13 +1,11 @@
-"""Pestaña 3: FFT, espectro unilateral y espectrograma."""
+"""Pestaña 3: FFT y espectro unilateral."""
 from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
 
-import numpy as np
-
 from core.dsp import (bandwidth_99, db, peak_frequency, resolution,
-                      spectral_centroid, spectrogram, spectrum)
+                      spectral_centroid, spectrum)
 
 from .widgets import PlotTab
 
@@ -24,8 +22,6 @@ class TabEspectro(PlotTab):
         c = self.controls
         ttk.Checkbutton(c, text="Espectro en dBV", variable=self.db_var,
                         command=self.refresh).grid(row=0, column=0, padx=(0, 12))
-        ttk.Label(c, text="El espectrograma usa la señal digitalizada.",
-                  style="Subtitle.TLabel").grid(row=0, column=1, sticky="w")
         ttk.Label(c, textvariable=self.info_var, style="Info.TLabel", wraplength=1240,
                   justify="left").grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 2))
 
@@ -48,22 +44,10 @@ class TabEspectro(PlotTab):
         y_n = db(m_n * p.vref) if use_db else m_n * p.vref
         ylabel = "Amplitud [dBV]" if use_db else "Amplitud [V]"
 
-        ax1, ax2, ax3 = self.axes(3, height_ratios=[1.0, 1.0, 1.15])
+        ax1, ax2 = self.axes(2, height_ratios=[1.0, 1.0])
 
         self._plot_spectrum(ax1, f_o, y_o, m_o, d.audio.fs, ylabel, "original")
         self._plot_spectrum(ax2, f_n, y_n, m_n, d.fs_eff, ylabel, "digitalizada")
-
-        f_s, t_s, sxx = spectrogram(d.x_n, d.fs_eff, p.window,
-                                    nperseg=min(1024, max(64, len(d.x_n) // 8)),
-                                    noverlap=min(768, max(32, len(d.x_n) // 16)))
-        vmax = float(np.max(sxx)) if sxx.size else 0.0
-        mesh = ax3.pcolormesh(t_s, f_s, sxx, shading="auto",
-                              vmin=vmax - 80.0, vmax=vmax, cmap="magma")
-        ax3.set_xlabel("Tiempo [s]")
-        ax3.set_ylabel("Frecuencia [Hz]")
-        ax3.set_title("Espectrograma de x(n)")
-        ax3.set_ylim(0.0, d.fs_eff / 2.0)
-        self.figure.colorbar(mesh, ax=ax3, label="Magnitud [dB]")
         self.draw()
 
         peak = peak_frequency(f_n, m_n)

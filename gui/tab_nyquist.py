@@ -133,6 +133,7 @@ class TabNyquist(PlotTab):
         return [fs for fs, var in self._fs_vars.items() if var.get()]
 
     def _refresh_aliasing(self) -> None:
+        self.show_footer(True)
         if not self.table_frame.winfo_manager():
             self.table_frame.pack(fill="x", padx=0, pady=0)
         d = self.app.get_digitized()
@@ -207,6 +208,7 @@ class TabNyquist(PlotTab):
     def _refresh_reconstruction(self) -> None:
         if self.table_frame.winfo_manager():
             self.table_frame.pack_forget()
+        self.show_footer(False)
         d = self.app.get_digitized()
         if d is None:
             self.info_var.set("Sin datos. Grabe o cargue un audio y revise los parámetros.")

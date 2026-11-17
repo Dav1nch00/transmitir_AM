@@ -299,9 +299,11 @@ def _find_burst(x: np.ndarray, sps: float) -> tuple[int, int]:
     win = max(1, int(round(sps)))
     kernel = np.ones(win, dtype=np.float64) / win
     env = np.convolve(np.abs(x), kernel, mode="same")
-    noise = float(np.percentile(env, 10.0))
+    noise = float(np.percentile(env, 1.0))
     peak = float(np.percentile(env, 99.5))
-    if peak <= 1e-12:
+    if peak <= 1e-12 or noise > 0.25 * peak:
+        # No hay un tramo claramente más silencioso: la ráfaga ocupa toda la
+        # captura o la señal empieza en la muestra 0.
         return 0, n
     threshold = max(noise * 5.0, peak * 0.10)
     idx = np.flatnonzero(env > threshold)
@@ -430,13 +432,81 @@ def _codes_from_bits(bits: np.ndarray, pcm_bits: int) -> np.ndarray:
     return (groups.astype(np.int64) * weights).sum(axis=1)
 
 
+def _align_pcm_phase(bits: np.ndarray, pcm_bits: int) -> np.ndarray:
+    """Elige el desplazamiento de bits que produce el audio PCM más suave.
+
+    Al buscar el inicio de una ráfaga capturada por micrófono, el primer bit
+    puede caer en cualquier posición dentro de una muestra PCM.  Como el audio
+    es una señal continua, la agrupación correcta de ``pcm_bits`` bits es la
+    que minimiza la variación entre muestras consecutivas.
+    """
+    nbits = int(pcm_bits)
+    if nbits <= 1 or bits.size < nbits + 1:
+        return bits
+    best_shift = 0
+    best_score = float("inf")
+    for shift in range(nbits):
+        codes = _codes_from_bits(bits[shift:], nbits)
+        if codes.size < 2:
+            continue
+        values = codes.astype(np.float64)
+        delta = np.diff(values - values.mean())
+        score = float(np.mean(delta * delta))
+        if score < best_score:
+            best_score = score
+            best_shift = shift
+    return bits[best_shift:] if best_shift else bits
+
+
+def _pcm_from_psk(symbols: np.ndarray, bps: int, m: int,
+                  pcm_bits: int) -> np.ndarray:
+    """Resuelve la ambigüedad de fase de PSK y devuelve el mejor flujo PCM.
+
+    Una rotación constante de la constelación PSK suma un entero a todos los
+    símbolos y produce una permutación de los bits.  Se prueban las M
+    rotaciones posibles y se elige la que da el audio más suave.
+    """
+    best_bits = None
+    best_score = float("inf")
+    for rotation in range(int(m)):
+        rotated = (symbols + rotation) % int(m)
+        bits = _bits_from_symbols(rotated, bps)
+        aligned = _align_pcm_phase(bits, pcm_bits)
+        codes = _codes_from_bits(aligned, pcm_bits)
+        if codes.size < 2:
+            continue
+        values = codes.astype(np.float64)
+        delta = np.diff(values - values.mean())
+        score = float(np.mean(delta * delta))
+        if score < best_score:
+            best_score = score
+            best_bits = aligned
+    return best_bits if best_bits is not None else bits
+
+
+# Presupuesto aproximado de memoria para las matrices de trabajo de la
+# demodulación digital (segmento, acumuladas I/Q y banco de correladores FSK).
+# Así una captura muy larga no agota la memoria, pero se procesan varios
+# segundos de audio en lugar de recortar la salida a una fracción de segundo.
+_DEMOD_MEMORY_BUDGET = 320 * 1024 * 1024  # bytes
+_DEMOD_MAX_SPAN = 6_000_000  # muestras (≈136 s a 44100 Hz)
+
+
+def _max_span_samples(technique: str, m: int, sps: float) -> int:
+    """Máximo de muestras a procesar según lo que consume cada técnica."""
+    banks = 2 * int(m) if technique in ("FSK", "GFSK", "MFSK") else 0
+    bytes_per_sample = 8.0 * (2 + banks + 4)  # acumuladas + segmento/temporales
+    span = int(_DEMOD_MEMORY_BUDGET / bytes_per_sample)
+    return max(int(64 * sps), min(span, _DEMOD_MAX_SPAN))
+
+
 def demodulate_digital(technique: str, received_signal, fs: float,
                        carrier_freq: float, symbol_rate: float,
                        bits_per_symbol: int, pcm_bits: int,
                        audio_fs: float = 16000.0,
                        deviation: float = 3000.0, bt: float = 0.5,
                        find_start: bool = True,
-                       max_symbols: int = 50000) -> DemodResult:
+                       max_symbols: int | None = None) -> DemodResult:
     """Demodula ASK, FSK, PSK, QAM, GFSK o MFSK y reconstruye el PCM.
 
     La recepción digital hace:
@@ -445,6 +515,10 @@ def demodulate_digital(technique: str, received_signal, fs: float,
     3. Búsqueda del instante de muestreo dentro del símbolo.
     4. Decisión de símbolos (envolvente, fase, constelación o frecuencia).
     5. Símbolos → bits → códigos PCM → audio.
+
+    ``max_symbols`` limita explícitamente cuántos símbolos se procesan.  Si es
+    ``None`` se procesa toda la señal, acotada solo por el presupuesto de
+    memoria de la técnica.
     """
     technique = str(technique).upper()
     if technique not in DIGITAL_TECHNIQUES:
@@ -498,12 +572,18 @@ def demodulate_digital(technique: str, received_signal, fs: float,
         start, end = _find_burst(filtered, sps)
     else:
         start, end = 0, len(filtered)
-    # No se procesan más muestras de las necesarias para ``max_symbols``;
-    # así una captura larga no dispara el uso de memoria.
-    max_span = int((int(max_symbols) + 2) * sps) + 1
-    end = min(end, start + max_span)
+    # No se procesan más muestras de las que permite el presupuesto de
+    # memoria (o ``max_symbols`` si se indicó); así una captura larga no
+    # dispara el uso de memoria, pero la salida no se recorta de más.
+    if max_symbols is None:
+        max_span = _max_span_samples(technique, m, sps)
+    else:
+        max_span = int((int(max_symbols) + 2) * sps) + 1
+    total_span = end - start
+    end = min(end, start + max(2, max_span))
     if end - start < 2:
         raise ModulationError("La señal es demasiado corta para demodular.")
+    truncated = (end - start) < total_span
 
     # Se trabaja solo sobre el segmento activo (coordenadas desde 0).
     segment = filtered[start:end]
@@ -533,7 +613,8 @@ def demodulate_digital(technique: str, received_signal, fs: float,
         n_sym = int(np.floor(available / sps + 0.5))
         if n_sym < 1:
             return None
-        n_sym = min(n_sym, int(max_symbols))
+        if max_symbols is not None:
+            n_sym = min(n_sym, int(max_symbols))
         starts, ends = _symbol_slices(0.0, offset, sps, n_sym, n)
         if starts.size < 1:
             return None
@@ -618,7 +699,15 @@ def demodulate_digital(technique: str, received_signal, fs: float,
                                    key=lambda r: (r[2], abs(r[0])))
 
     bits = _bits_from_symbols(symbols, bps)
-    codes = _codes_from_bits(bits, nbits_pcm)
+    # En recepción por micrófono el inicio de la ráfaga no tiene por qué caer
+    # en un límite de muestra PCM; se busca la agrupación de bits más suave.
+    if find_start and technique == "PSK":
+        pcm_stream = _pcm_from_psk(symbols, bps, m, nbits_pcm)
+    elif find_start:
+        pcm_stream = _align_pcm_phase(bits, nbits_pcm)
+    else:
+        pcm_stream = bits
+    codes = _codes_from_bits(pcm_stream, nbits_pcm)
     if codes.size == 0:
         raise ModulationError(
             "No se completó ninguna muestra PCM: aumente la duración de la "
@@ -633,6 +722,9 @@ def demodulate_digital(technique: str, received_signal, fs: float,
             f"{bits.size} bits · {codes.size} muestras PCM de {nbits_pcm} bits · "
             f"fs audio = {fs_out:.0f} Hz · duración = {codes.size / fs_out:.2f} s · "
             f"offset = {best_off:.2f} muestras · error = {error:.3f}")
+    if truncated:
+        info += (f" · procesados los primeros {n / fs:.1f} s de la señal "
+                 "recibida por límite de memoria")
     if technique == "GFSK" and float(bt) < 0.5:
         info += (" · aviso: con BT < 0.5 la interferencia entre símbolos "
                  "puede degradar la decisión")

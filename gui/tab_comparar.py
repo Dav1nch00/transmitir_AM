@@ -85,7 +85,7 @@ class TabComparar(PlotTab):
                    command=self._use_latest).pack(side="left", padx=(0, 4))
 
         row2 = ttk.Frame(c)
-        row2.pack(fill="x", pady=(6, 0))
+        row2.pack(fill="x", pady=(4, 0))
 
         ttk.Checkbutton(row2, text="Alinear automáticamente",
                         variable=self.align_var).pack(side="left", padx=(0, 8))
@@ -125,7 +125,7 @@ class TabComparar(PlotTab):
         self.save_ab_btn.pack(side="left", padx=(0, 4))
 
         row3 = ttk.Frame(c)
-        row3.pack(fill="x", pady=(6, 0))
+        row3.pack(fill="x", pady=(4, 0))
         ttk.Label(row3, text="Vista").pack(side="left", padx=(0, 4))
         self.view_combo = ttk.Combobox(
             row3, textvariable=self.view_var, state="readonly", width=9,
@@ -137,17 +137,13 @@ class TabComparar(PlotTab):
 
         ttk.Label(c, textvariable=self.info_var, style="Info.TLabel",
                   wraplength=1240, justify="left").pack(anchor="w",
-                                                        pady=(6, 0))
+                                                        pady=(4, 0))
         ttk.Label(
             c,
-            text="Las dos señales se dibujan en ejes separados, nunca "
-                 "superpuestas. «▶ A → B» reproduce el audio original y luego "
-                 "el recuperado, con una pausa breve: no se mezclan. "
-                 "«💾 WAV A → B» guarda esa misma secuencia para escucharla "
-                 "por separado. Si no eligió archivos, se usan la última "
-                 "transmisión y la última demodulación.",
+            text="Ejes separados, sin superposición · «▶ A → B» reproduce en "
+                 "secuencia · «💾 WAV A → B» guarda esa secuencia.",
             style="Subtitle.TLabel", wraplength=1240, justify="left").pack(
-            anchor="w", pady=(4, 0))
+            anchor="w", pady=(2, 0))
 
         self.message("Transmita un audio, demodúlelo y vuelva a esta pestaña: "
                      "la comparación usa la última transmisión y la última "
@@ -342,16 +338,10 @@ class TabComparar(PlotTab):
 
     def _format_info(self, a: Audio, b: Audio,
                      r: ComparisonResult) -> str:
-        lines = [
-            f"A · original: {a.name} · {a.duration:.3f} s · {a.fs} Hz · "
-            f"{len(a.x)} muestras",
-            f"B · recuperado: {b.name} · {b.duration:.3f} s · {b.fs} Hz · "
-            f"{len(b.x)} muestras",
-        ]
+        resampled = ""
         if r.resampled:
-            lines.append(
-                f"B se remuestreó de {r.fs_test_original:.0f} Hz a "
-                f"{r.fs:.0f} Hz para compararla con A.")
+            resampled = (f" · B remuestreada de {r.fs_test_original:.0f} Hz "
+                         f"a {r.fs:.0f} Hz")
         if r.delay_samples == 0:
             delay = "sin desfase"
         elif r.delay_samples > 0:
@@ -360,18 +350,18 @@ class TabComparar(PlotTab):
         else:
             delay = (f"B llega {-r.delay_samples} muestras antes "
                      f"({1e3 * r.delay_s:.2f} ms)")
-        lines.append(
-            f"Tramo comparado: {r.duration:.3f} s "
-            f"({100.0 * r.overlap_ref:.1f} % de A, "
-            f"{100.0 * r.overlap_test:.1f} % de B) · {delay} · "
-            f"ganancia aplicada a B: {r.gain:.4f}")
-        lines.append(
+        # Los nombres, duraciones y fs de A y B ya están en la línea de
+        # orígenes; aquí solo van las métricas de la comparación para no
+        # robarle altura a las gráficas.
+        lines = [
+            f"Tramo: {r.duration:.3f} s ({100.0 * r.overlap_ref:.1f} % de A, "
+            f"{100.0 * r.overlap_test:.1f} % de B){resampled} · {delay} · "
+            f"ganancia aplicada a B: {r.gain:.4f}",
             f"Correlación: {r.corr:.5f} ({r.correlation_percent:.2f} %) · "
             f"fidelidad {r.fidelity} · SNR: {self._fmt_snr(r.snr_db)} · "
-            f"RMSE: {r.rmse:.5f} · error máx.: {r.max_error:.5f}")
-        lines.append(
-            f"RMS de A: {r.rms_ref:.5f} · RMS de B (antes de ganancia): "
-            f"{r.rms_test:.5f}")
+            f"RMSE: {r.rmse:.5f} · error máx.: {r.max_error:.5f} · "
+            f"RMS A/B: {r.rms_ref:.5f} / {r.rms_test:.5f}",
+        ]
         return "\n".join(lines)
 
     @staticmethod
@@ -561,9 +551,6 @@ class TabComparar(PlotTab):
         xmax = max(r.duration, 1e-3)
         for ax in (ax1, ax2, ax3):
             ax.set_xlim(0.0, xmax)
-        self.figure.suptitle(
-            "Comparación en ejes separados (sin superposición)",
-            fontsize=10)
         self.draw()
 
     def _plot_spectrum(self, r: ComparisonResult) -> None:
@@ -603,8 +590,6 @@ class TabComparar(PlotTab):
         xmax = min(8000.0, 0.5 * r.fs)
         for ax in (ax1, ax2, ax3):
             ax.set_xlim(0.0, xmax)
-        self.figure.suptitle(
-            "Espectros en ejes separados (sin superposición)", fontsize=10)
         self.draw()
 
     # ------------------------------------------------------------------

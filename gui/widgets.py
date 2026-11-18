@@ -155,7 +155,10 @@ class PlotTab(ttk.Frame):
         self.draw()
 
     def draw(self) -> None:
-        self.canvas.draw_idle()
+        # Dibujado sincrónico: draw_idle() puede dejar el canvas en blanco al
+        # cambiar de pestaña o redimensionar la ventana.
+        self.canvas.draw()
+        self.canvas.flush_events()
 
     def save_figure(self) -> None:
         """Guarda en un archivo la figura completa de la pestaña actual."""

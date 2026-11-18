@@ -17,6 +17,7 @@ from .tab_recibir import TabRecibir
 from .tab_comparar import TabComparar
 from .tab_pcm import TabPCM
 from .tab_constelacion import TabConstelacion
+from .tab_comprimir_audio import TabComprimirAudio
 
 
 class App(tk.Tk):
@@ -123,7 +124,8 @@ class App(tk.Tk):
             header,
             text="Grabación · muestreo · cuantización · FFT · Nyquist y reconstrucción · "
                  "PCM · constelaciones · AM/FM/ASK/FSK/PSK/QAM/GFSK/MFSK · "
-                 "recepción/demodulación · comparación original/recuperada",
+                 "recepción/demodulación · comparación original/recuperada · "
+                 "compresión sin pérdida (FLAC)",
             style="Subtitle.TLabel",
         ).pack(anchor="w")
 
@@ -176,10 +178,12 @@ class App(tk.Tk):
         self.tab_comparar = TabComparar(self.notebook, self)
         self.tab_pcm = TabPCM(self.notebook, self)
         self.tab_constelacion = TabConstelacion(self.notebook, self)
+        self.tab_comprimir_audio = TabComprimirAudio(self.notebook, self)
         self.tabs = [self.tab_captura, self.tab_digitalizacion,
                      self.tab_espectro, self.tab_nyquist, self.tab_recon,
                      self.tab_enviar, self.tab_recibir, self.tab_comparar,
-                     self.tab_pcm, self.tab_constelacion]
+                     self.tab_pcm, self.tab_constelacion,
+                     self.tab_comprimir_audio]
 
         self.notebook.add(self.tab_captura, text="1. Captura")
         self.notebook.add(self.tab_digitalizacion, text="2. Digitalización y cuantización")
@@ -191,7 +195,11 @@ class App(tk.Tk):
         self.notebook.add(self.tab_comparar, text="8. Comparación de audio")
         self.notebook.add(self.tab_pcm, text="9. PCM y trama serie")
         self.notebook.add(self.tab_constelacion, text="10. Constelación")
+        self.notebook.add(self.tab_comprimir_audio, text="11. Compresión de audio")
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+        # La primera pestaña ya está seleccionada al arrancar, pero Tk no
+        # dispara <<NotebookTabChanged>>: la dibujamos explícitamente.
+        self._on_tab_changed()
 
         status = ttk.Frame(self)
         status.pack(side="bottom", fill="x")

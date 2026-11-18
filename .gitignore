@@ -5,3 +5,4 @@ venv/
 salidas/*.wav
 salidas/*.csv
 salidas/*.png
+salidas/*.flac

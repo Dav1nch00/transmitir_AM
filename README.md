@@ -5,7 +5,8 @@ digitalizarlo, analizarlo con FFT y estudiar muestreo, cuantización, Nyquist,
 aliasing y reconstrucción. Incluye además el estudio de la trama PCM y de los
 códigos de línea, las constelaciones de PCM/PAM y de las técnicas digitales, y
 la modulación, transmisión acústica y recepción/demodulación de la señal con
-AM, FM o técnicas digitales (ASK, FSK, PSK, QAM, GFSK y MFSK).
+AM, FM o técnicas digitales (ASK, FSK, PSK, QAM, GFSK y MFSK). El Desafío 4
+añade la compresión sin pérdida del audio a FLAC en la pestaña 11.
 
 El flujo completo es:
 
@@ -27,7 +28,7 @@ micrófono / WAV  →  x(t)  →  muestreo fs  →  cuantización N bits  →  t
 ## Requisitos
 
 - Python 3.10 o superior.
-- `numpy`, `scipy`, `matplotlib`, `PyAudio` y Tkinter.
+- `numpy`, `scipy`, `matplotlib`, `PyAudio`, `soundfile` y Tkinter.
 - En Windows, Tkinter viene con Python. Para instalar el resto:
   ```bash
   pip install -r requirements.txt
@@ -66,7 +67,9 @@ transmitir_AM/
 │   ├── am.py                modulación y demodulación AM (DSB-FC)
 │   ├── modulation.py        FM y modulación/demodulación digital
 │   │                        (ASK/FSK/PSK/QAM/GFSK/MFSK)
-│   └── compare.py           alineación y métricas original vs. recuperado
+│   ├── compare.py           alineación y métricas original vs. recuperado
+│   ├── compression_audio.py WAV PCM ↔ FLAC sin pérdida (Desafío 4)
+│   └── compression_common.py texto de tamaño (ratio / "más grande")
 ├── gui/
 │   ├── app.py               ventana, parámetros globales y pestañas
 │   ├── widgets.py           figura incrustada, barra de guardado y CSV
@@ -78,9 +81,10 @@ transmitir_AM/
 │   ├── tab_recibir.py       pestaña 7 (recepción y demodulación)
 │   ├── tab_comparar.py      pestaña 8 (comparación de audio)
 │   ├── tab_pcm.py           pestaña 9 (PCM y trama serie)
-│   └── tab_constelacion.py  pestaña 10 (constelaciones)
-├── tests/                   pruebas del núcleo, PCM, modulación y demodulación
-├── salidas/                 WAV, CSV y figuras exportadas
+│   ├── tab_constelacion.py  pestaña 10 (constelaciones)
+│   └── tab_comprimir_audio.py pestaña 11 (Desafío 4: FLAC)
+├── tests/                   pruebas del núcleo, PCM, modulación, demodulación y compresión
+├── salidas/                 WAV, FLAC, CSV y figuras exportadas
 └── referencia/              scripts originales de apoyo (Emisor.py, Receptor.py, enviar_recibir.py)
 ```
 
@@ -294,7 +298,33 @@ necesita audio cargado.
 - El mapeo coincide con el del modulador de la pestaña 6, de modo que la
   constelación sirve para interpretar las señales transmitidas.
 
-### 11. Exportación
+### 11. Compresión de audio (Desafío 4)
+
+1. Grabe o cargue el WAV del Desafío 2 (pestaña 1). Si el audio viene de una
+   demodulación, la propia pestaña 11 lo exporta a un WAV PCM de 16 bits.
+2. En la pestaña **11. Compresión de audio** elija *Audio actual de RETICO* o
+   *Archivo WAV…* y pulse **🗜 Comprimir a FLAC**.
+3. Se guarda un `.flac` en `salidas/`. Se muestran tamaños, ratio, fs, canales,
+   subtipo PCM y el **SHA-256 de las muestras**.
+4. Pulse **📂 Descomprimir FLAC** para recuperar un WAV. Si el FLAC se generó en
+   la sesión, el programa compara el hash y reporta *muestras EXACTAS (bit a
+   bit)*. También puede usar **✅ Verificar** con dos WAV cualesquiera.
+5. **▶ Original** y **▶ Reconstruido** permiten escuchar cada versión por
+   separado; la gráfica incluye la forma de onda del error.
+
+**¿Por qué FLAC?** El WAV está sin comprimir. FLAC es un códec *lossless* que
+almacena exactamente las mismas muestras PCM: no hay pérdida de información y
+el ratio típico es 2×–5×. Se admiten WAV PCM de 16, 24 y 32 bits (32 bits se
+reduce a 24, el máximo que admite FLAC). Los WAV de 8 bits sin signo o float
+se rechazan con un mensaje que indica cómo exportarlos a 16 bits desde la
+pestaña 1.
+
+**¿El ratio salió menor que 1?** No es un error: el *ratio* es
+`original/comprimido` y puede quedar por debajo de 1 si el FLAC es más grande
+que el WAV (por ejemplo con audio muy corto o muy ruidoso). La interfaz lo
+indica como «archivo X % más grande» en vez de un porcentaje negativo confuso.
+
+### 12. Exportación
 
 - **Gráficas:** botón «Guardar gráfica» en la barra inferior de cada pestaña
   (PNG, PDF o SVG en `salidas/`). Guarda la figura completa de esa pestaña.
@@ -306,6 +336,7 @@ necesita audio cargado.
   hexadecimales según el selector Bit/Byte. Pestaña 8, comparación A/B/error
   también hasta 100 000 filas. Pestaña 9, muestras con su palabra PCM. Pestaña
   10, tabla de símbolos de la constelación.
+- **Comprimido (Desafío 4):** pestaña 11, FLAC del audio, guardado en `salidas/`.
 - **Figuras:** además del botón propio, la barra de Matplotlib de cada pestaña
   permite guardar la figura.
 - Los botones de WAV, CSV y gráfica proponen la carpeta `salidas/` con marca
@@ -336,7 +367,11 @@ ruido, el silencio y la reproducción secuencial A → B. Las pruebas de PCM
 códigos ↔ bits y los cuatro códigos de línea. Las de constelación
 (`tests/test_constellation.py`) comprueban el mapeo de cada técnica, el
 número de puntos, las etiquetas MSB primero, las métricas de distancia y la
-relación palabra PCM ↔ nivel PAM ↔ tensión del ADC.
+relación palabra PCM ↔ nivel PAM ↔ tensión del ADC. Las pruebas de compresión
+(`tests/test_compression.py`) cubren el round-trip exacto de audio (16 y 24
+bits), el rechazo de formatos no soportados y el texto de tamaño cuando el
+archivo crece; `tests/test_gui_canvas.py` comprueba que las 11 pestañas tengan
+su canvas en el contenedor correcto.
 
 ## Limitaciones y notas
 
